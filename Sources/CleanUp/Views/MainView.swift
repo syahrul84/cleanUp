@@ -1,20 +1,24 @@
 import SwiftUI
 
 enum Feature: String, CaseIterable, Identifiable {
+    case smartScan = "Smart Scan"
     case uninstaller = "App Uninstaller"
     case junk = "Junk Cleaner"
     case duplicates = "Duplicate Finder"
     case largeFiles = "Large & Old Files"
     case leftovers = "Leftover Finder"
+    case startupItems = "Startup Items"
 
     var id: String { rawValue }
     var systemImage: String {
         switch self {
+        case .smartScan: return "wand.and.stars"
         case .uninstaller: return "xmark.bin"
         case .junk: return "sparkles"
         case .duplicates: return "doc.on.doc"
         case .largeFiles: return "externaldrive.badge.exclamationmark"
         case .leftovers: return "magnifyingglass"
+        case .startupItems: return "power"
         }
     }
 }
@@ -36,14 +40,19 @@ struct MainView: View {
             }
         } detail: {
             switch selection ?? .uninstaller {
+            case .smartScan: SmartScanView()
             case .uninstaller: UninstallerView()
             case .junk: JunkView()
             case .duplicates: DuplicatesView()
             case .largeFiles: LargeFilesView()
             case .leftovers: LeftoversView()
+            case .startupItems: StartupItemsView()
             }
         }
         .navigationTitle("CleanUp")
+        .onReceive(AppState.shared.$smartScanRequest.dropFirst()) { _ in
+            selection = .smartScan
+        }
     }
 }
 
