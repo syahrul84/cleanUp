@@ -20,7 +20,7 @@ enum Feature: String, CaseIterable, Identifiable {
 }
 
 struct MainView: View {
-    @State private var selection: Feature? = .junk
+    @State private var selection: Feature? = .uninstaller
 
     var body: some View {
         NavigationSplitView {
@@ -35,7 +35,7 @@ struct MainView: View {
                 FullDiskAccessHint()
             }
         } detail: {
-            switch selection ?? .junk {
+            switch selection ?? .uninstaller {
             case .uninstaller: UninstallerView()
             case .junk: JunkView()
             case .duplicates: DuplicatesView()
@@ -84,6 +84,10 @@ struct SidebarHeader: View {
                     .shadow(color: .black.opacity(0.6), radius: 2, y: 1)
                     .padding(6)
             }
+            // .clipped() clips drawing but NOT hit-testing — without this, the
+            // scaled-to-fill image's invisible overflow steals clicks from the
+            // first sidebar rows below the banner.
+            .allowsHitTesting(false)
     }
 }
 
