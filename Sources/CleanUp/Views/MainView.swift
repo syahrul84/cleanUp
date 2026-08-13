@@ -44,11 +44,19 @@ struct MainView: View {
     }
 }
 
-/// Full Disk Access is required to see everything; detect a common protected path.
+/// Full Disk Access is required to see everything. Probe by actually opening the
+/// user TCC database — it exists on every macOS install and is always FDA-protected.
+/// (A stat/access() check is not enough: TCC only blocks at open time, and a probe
+/// file that happens not to exist would read as "no access" forever.)
 struct FullDiskAccessHint: View {
-    private var hasFullDiskAccess: Bool {
-        let probe = FileUtils.home.appendingPathComponent("Library/Safari/Bookmarks.plist")
-        return FileManager.default.isReadableFile(atPath: probe.path)
+    @State private var hasFullDiskAccess = Self.check()
+
+    private static func check() -> Bool {
+        let probe = FileUtils.home
+            .appendingPathComponent("Library/Application Support/com.apple.TCC/TCC.db")
+        guard let handle = FileHandle(forReadingAtPath: probe.path) else { return false }
+        try? handle.close()
+        return true
     }
 
     var body: some View {
@@ -68,6 +76,10 @@ struct FullDiskAccessHint: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.yellow.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
             .padding(8)
+            .onReceive(NotificationCenter.default.publisher(
+                for: NSApplication.didBecomeActiveNotification)) { _ in
+                hasFullDiskAccess = Self.check()
+            }
         }
     }
 }
