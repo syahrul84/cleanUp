@@ -28,6 +28,9 @@ struct MainView: View {
                 Label(feature.rawValue, systemImage: feature.systemImage).tag(feature)
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 220)
+            .safeAreaInset(edge: .top) {
+                SidebarHeader()
+            }
             .safeAreaInset(edge: .bottom) {
                 FullDiskAccessHint()
             }
@@ -41,6 +44,31 @@ struct MainView: View {
             }
         }
         .navigationTitle("CleanUp")
+    }
+}
+
+/// App logo, name and version at the top of the sidebar.
+struct SidebarHeader: View {
+    private var version: String {
+        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+        return "Version \(v)"
+    }
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 64, height: 64)
+            Text("CleanUp")
+                .font(.headline)
+            Text(version)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
     }
 }
 
