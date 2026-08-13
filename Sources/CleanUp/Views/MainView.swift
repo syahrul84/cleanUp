@@ -47,28 +47,43 @@ struct MainView: View {
     }
 }
 
-/// App logo, name and version at the top of the sidebar.
+/// Full-width logo banner at the top of the sidebar, with the app name
+/// centered on it and the version in the bottom-right corner.
 struct SidebarHeader: View {
     private var version: String {
         let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
-        return "Version \(v)"
+        return "v\(v)"
+    }
+
+    private var logo: NSImage {
+        Bundle.main.url(forResource: "SidebarLogo", withExtension: "png")
+            .flatMap { NSImage(contentsOf: $0) }
+            ?? NSApp.applicationIconImage
     }
 
     var body: some View {
-        VStack(spacing: 4) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 64, height: 64)
-            Text("CleanUp")
-                .font(.headline)
-            Text(version)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 8)
-        .padding(.bottom, 4)
+        Color.clear
+            .frame(height: 110)
+            .overlay {
+                Image(nsImage: logo)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFill()
+            }
+            .clipped()
+            .overlay {
+                Text("CleanUp")
+                    .font(.title.bold())
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.6), radius: 3, y: 1)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                Text(version)
+                    .font(.caption2.bold())
+                    .foregroundStyle(.white.opacity(0.9))
+                    .shadow(color: .black.opacity(0.6), radius: 2, y: 1)
+                    .padding(6)
+            }
     }
 }
 
