@@ -19,6 +19,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct CleanUpApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
+    /// The app logo (rounded icon artwork) at menu-bar size. Not a template
+    /// image — the logo keeps its colors in the menu bar.
+    static let menuBarIcon: NSImage = {
+        let icon = NSApp.applicationIconImage?.copy() as? NSImage ?? NSImage()
+        icon.size = NSSize(width: 18, height: 18)
+        return icon
+    }()
+
     var body: some Scene {
         WindowGroup(id: "main") {
             MainView()
@@ -28,7 +36,7 @@ struct CleanUpApp: App {
         MenuBarExtra {
             MenuBarContent()
         } label: {
-            Image(systemName: "wand.and.stars")
+            Image(nsImage: Self.menuBarIcon)
         }
         .menuBarExtraStyle(.window)
     }

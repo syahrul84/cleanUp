@@ -24,7 +24,7 @@ enum Feature: String, CaseIterable, Identifiable {
 }
 
 struct MainView: View {
-    @State private var selection: Feature? = .uninstaller
+    @State private var selection: Feature? = .smartScan
 
     var body: some View {
         NavigationSplitView {
@@ -39,7 +39,7 @@ struct MainView: View {
                 FullDiskAccessHint()
             }
         } detail: {
-            switch selection ?? .uninstaller {
+            switch selection ?? .smartScan {
             case .smartScan: SmartScanView()
             case .uninstaller: UninstallerView()
             case .junk: JunkView()
