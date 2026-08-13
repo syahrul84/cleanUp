@@ -31,7 +31,7 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
-    <key>NSHumanReadableCopyright</key><string>© 2026 Syahrul</string>
+    <key>NSHumanReadableCopyright</key><string>© 2026 Syahrul Farhan</string>
 </dict>
 </plist>
 EOF
