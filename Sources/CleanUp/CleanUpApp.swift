@@ -1,7 +1,24 @@
 import SwiftUI
 
+/// Detects a launch triggered by the login item and hides the main window,
+/// so booting the Mac brings up only the menu bar widget.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        let launchedAtLogin = event?.eventID == kAEOpenApplication
+            && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+        if launchedAtLogin {
+            DispatchQueue.main.async {
+                NSApp.windows.filter { $0.canBecomeMain }.forEach { $0.close() }
+            }
+        }
+    }
+}
+
 @main
 struct CleanUpApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     var body: some Scene {
         WindowGroup(id: "main") {
             MainView()
@@ -20,6 +37,7 @@ struct CleanUpApp: App {
 struct MenuBarContent: View {
     @StateObject private var disk = DiskStatus()
     @StateObject private var stats = SystemStats()
+    @StateObject private var loginItem = LoginItem()
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -37,6 +55,18 @@ struct MenuBarContent: View {
             statRow(icon: "internaldrive", title: "Disk free",
                     value: "\(disk.freeShort) of \(Format.bytes(disk.total))",
                     fraction: 1 - Double(disk.free) / Double(max(disk.total, 1)))
+
+            Divider()
+
+            Toggle("Launch at login", isOn: Binding(
+                get: { loginItem.enabled },
+                set: { loginItem.set($0) }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            if let error = loginItem.lastError {
+                Text(error).font(.caption2).foregroundStyle(.red)
+            }
 
             Divider()
 
