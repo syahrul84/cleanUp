@@ -19,12 +19,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct CleanUpApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    /// The app logo (rounded icon artwork) at menu-bar size. Not a template
-    /// image — the logo keeps its colors in the menu bar.
+    /// Monochrome template icon echoing the logo's shape — a circular swoosh
+    /// with an arrow through it. As a template image, the menu bar tints it
+    /// black or white automatically to match the system appearance.
     static let menuBarIcon: NSImage = {
-        let icon = NSApp.applicationIconImage?.copy() as? NSImage ?? NSImage()
-        icon.size = NSSize(width: 18, height: 18)
-        return icon
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+            NSColor.black.set()
+
+            // Swoosh: open ring with the gap at the top-right, where the arrow exits.
+            let swoosh = NSBezierPath()
+            swoosh.appendArc(withCenter: NSPoint(x: 9, y: 9), radius: 6.5,
+                             startAngle: 130, endAngle: 350, clockwise: false)
+            swoosh.lineWidth = 2.2
+            swoosh.lineCapStyle = .round
+            swoosh.stroke()
+
+            // Arrow shaft, bottom-left to top-right.
+            let shaft = NSBezierPath()
+            shaft.move(to: NSPoint(x: 5.5, y: 5.5))
+            shaft.line(to: NSPoint(x: 11.5, y: 11.5))
+            shaft.lineWidth = 2.2
+            shaft.lineCapStyle = .round
+            shaft.stroke()
+
+            // Arrowhead pointing to the top-right.
+            let head = NSBezierPath()
+            head.move(to: NSPoint(x: 14.5, y: 14.5))
+            head.line(to: NSPoint(x: 14.5, y: 9.0))
+            head.line(to: NSPoint(x: 9.0, y: 14.5))
+            head.close()
+            head.fill()
+
+            return true
+        }
+        image.isTemplate = true
+        return image
     }()
 
     var body: some Scene {
