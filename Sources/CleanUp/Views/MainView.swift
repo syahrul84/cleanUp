@@ -113,14 +113,11 @@ struct SidebarHeader: View {
 struct SupportLink: View {
     var body: some View {
         HStack(spacing: 12) {
-            Link(destination: URL(string: "https://github.com/sponsors/syahrul84")!) {
-                Label("Support this project", systemImage: "heart")
-            }
-            Spacer()
             Link(destination: URL(string: "https://ko-fi.com/syahrul84")!) {
-                Image(systemName: "cup.and.saucer")
+                Label("Buy me a coffee", systemImage: "cup.and.saucer")
             }
-            .help("Buy me a coffee on Ko-fi")
+            .help("Support CleanUp on Ko-fi")
+            Spacer()
             Link(destination: URL(string: "https://github.com/syahrul84/cleanUp")!) {
                 Image(systemName: "star")
             }
