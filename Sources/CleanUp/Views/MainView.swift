@@ -2,6 +2,7 @@ import SwiftUI
 
 enum Feature: String, CaseIterable, Identifiable {
     case smartScan = "Smart Scan"
+    case speed = "Speed"
     case uninstaller = "App Uninstaller"
     case junk = "Junk Cleaner"
     case duplicates = "Duplicate Finder"
@@ -13,6 +14,7 @@ enum Feature: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .smartScan: return "wand.and.stars"
+        case .speed: return "speedometer"
         case .uninstaller: return "xmark.bin"
         case .junk: return "sparkles"
         case .duplicates: return "doc.on.doc"
@@ -41,6 +43,7 @@ struct MainView: View {
         } detail: {
             switch selection ?? .smartScan {
             case .smartScan: SmartScanView()
+            case .speed: SpeedView()
             case .uninstaller: UninstallerView()
             case .junk: JunkView()
             case .duplicates: DuplicatesView()
@@ -52,6 +55,9 @@ struct MainView: View {
         .navigationTitle("CleanUp")
         .onReceive(AppState.shared.$smartScanRequest.dropFirst()) { _ in
             selection = .smartScan
+        }
+        .onReceive(AppState.shared.$openFeatureRequest.compactMap { $0 }) { feature in
+            selection = feature
         }
     }
 }

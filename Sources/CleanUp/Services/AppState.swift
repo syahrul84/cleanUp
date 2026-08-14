@@ -9,6 +9,12 @@ extension Notification.Name {
 final class AppState: ObservableObject {
     static let shared = AppState()
     @Published var smartScanRequest = 0
+    @Published var openFeatureRequest: Feature?
+
+    /// Ask the main window to switch to the given sidebar feature.
+    func open(_ feature: Feature) {
+        openFeatureRequest = feature
+    }
 
     /// Switch the main window to Smart Scan and start a scan.
     func requestSmartScan() {

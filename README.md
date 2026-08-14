@@ -9,6 +9,10 @@ A native macOS cleanup utility (Swift + SwiftUI), similar in spirit to CleanMyMa
 - **Duplicate Finder** — exact duplicates in folders you choose, via size → partial hash → full SHA-256. No false positives. Auto-selects all but the first copy in each group.
 - **Large & Old Files** — files over 50 MB in chosen folders, with last-opened dates.
 - **Leftover Finder** — reverse-DNS entries in `~/Library` that belong to no installed app (Apple's own files are always excluded). Nothing selected by default.
+- **Smart Scan** — one-click overview of junk, leftovers and Trash with a single clean action.
+- **Speed** — honest performance help: a health checklist (disk headroom, swap, startup items, uptime), live CPU/memory hogs with polite Quit, reversible UI-animation tweaks, and maintenance actions (DNS flush, Finder/Dock restart, Spotlight re-import). No RAM-purge snake oil.
+- **Startup Items** — list launch agents/daemons; reversibly disable your own launch agents.
+- **Menu bar widget** — live CPU, memory and disk stats, launch-at-login toggle, quick Smart Scan.
 
 ## Safety model
 
