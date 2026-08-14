@@ -38,10 +38,7 @@ struct MainView: View {
                 SidebarHeader()
             }
             .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 0) {
-                    FullDiskAccessHint()
-                    SupportLink()
-                }
+                FullDiskAccessHint()
             }
         } detail: {
             switch selection ?? .smartScan {
@@ -109,24 +106,46 @@ struct SidebarHeader: View {
     }
 }
 
-/// Quiet sponsor/repo link at the bottom of the sidebar — never a nag.
-struct SupportLink: View {
+/// Custom About window: logo, version, and support/repo links.
+struct AboutView: View {
+    private var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+    }
+
     var body: some View {
-        HStack(spacing: 12) {
+        VStack(spacing: 10) {
+            Image(nsImage: NSApp.applicationIconImage ?? NSImage())
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 96, height: 96)
+            Text("CleanUp").font(.title.bold())
+            Text("Version \(version)").font(.callout).foregroundStyle(.secondary)
+            Text("A free, open-source Mac cleaner.\nNo subscriptions, no snake oil.")
+                .font(.caption)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+
             Link(destination: URL(string: "https://ko-fi.com/syahrul84")!) {
-                Label("Buy me a coffee", systemImage: "cup.and.saucer")
+                Label("Send me a tip", systemImage: "cup.and.saucer.fill")
+                    .frame(maxWidth: .infinity)
             }
-            .help("Support CleanUp on Ko-fi")
-            Spacer()
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .padding(.top, 6)
+
             Link(destination: URL(string: "https://github.com/syahrul84/cleanUp")!) {
-                Image(systemName: "star")
+                Label("Star on GitHub", systemImage: "star")
+                    .frame(maxWidth: .infinity)
             }
-            .help("Star CleanUp on GitHub")
+            .buttonStyle(.bordered)
+
+            Text("© 2026 Syahrul Farhan · MIT License")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .padding(.top, 8)
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(24)
+        .frame(width: 280)
     }
 }
 
