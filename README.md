@@ -1,35 +1,49 @@
 # CleanUp
 
-A native macOS cleanup utility (Swift + SwiftUI), similar in spirit to CleanMyMac.
+**A free, open-source Mac cleaner with no snake oil.**
+
+Native Swift + SwiftUI. Tiny footprint. Everything it removes goes to the **Trash** — never permanently deleted — always behind a confirmation. No subscription, no upsell, no fake "RAM optimizer".
+
+![CleanUp — Smart Scan](docs/screenshot-smartscan.png)
 
 ## Features
 
-- **App Uninstaller** — removes an app plus its leftovers (Application Support, Caches, Preferences, Containers, Launch Agents, saved state), with a preview before anything moves.
-- **Junk Cleaner** — scans user caches, logs, Xcode/simulator junk, developer caches (npm, pip, Homebrew, Gradle…), browser caches, old iOS backups and the Trash. Risky categories (iOS backups, Trash) are deselected by default.
-- **Duplicate Finder** — exact duplicates in folders you choose, via size → partial hash → full SHA-256. No false positives. Auto-selects all but the first copy in each group.
-- **Large & Old Files** — files over 50 MB in chosen folders, with last-opened dates.
-- **Leftover Finder** — reverse-DNS entries in `~/Library` that belong to no installed app (Apple's own files are always excluded). Nothing selected by default.
-- **Smart Scan** — one-click overview of junk, leftovers and Trash with a single clean action.
-- **Speed** — honest performance help: a health checklist (disk headroom, swap, startup items, uptime), live CPU/memory hogs with polite Quit, reversible UI-animation tweaks, and maintenance actions (DNS flush, Finder/Dock restart, Spotlight re-import). No RAM-purge snake oil.
-- **Startup Items** — list launch agents/daemons; reversibly disable your own launch agents.
-- **Menu bar widget** — live CPU, memory and disk stats, launch-at-login toggle, quick Smart Scan.
+- 🪄 **Smart Scan** — one click checks junk, app leftovers and Trash, shows how much you can reclaim, and cleans it in one action.
+- ⏱ **Speed** — an honest performance toolkit:
+  - Health check: disk headroom, memory pressure (swap), startup items, uptime — with traffic-light status and one-click fixes
+  - Live CPU & memory hogs with a polite Quit
+  - Reversible interface-animation tweaks (labeled honestly: they *feel* faster, they don't add horsepower)
+  - Maintenance: flush DNS, restart Finder/Dock, re-index a folder in Spotlight
+- 🗑 **App Uninstaller** — removes an app *and* its leftovers: Application Support, Caches, Preferences, Containers, Launch Agents, saved state.
+- ✨ **Junk Cleaner** — user caches, logs, Xcode junk, developer caches (npm, pip, Homebrew, Gradle…), browser caches, old iOS backups, Trash.
+- 📄 **Duplicate Finder** — exact duplicates via size → partial hash → full SHA-256. Zero false positives.
+- 💾 **Large & Old Files** — everything over 50 MB with last-opened dates.
+- 🔍 **Leftover Finder** — orphaned files from apps you deleted long ago (Apple's own files always excluded).
+- ⚡️ **Startup Items** — see launch agents and daemons; switch your own agents off and on again, fully reversibly.
+- 📊 **Menu bar widget** — live CPU, memory and disk usage, launch-at-login toggle, one-click Smart Scan.
 
-## Safety model
+## What CleanUp will never do
 
-Every removal uses `FileManager.trashItem` — **everything goes to the Trash**, nothing is permanently deleted, and every action shows a confirmation first.
+- ❌ "Free up RAM" buttons — macOS manages memory correctly on its own; purging makes things slower.
+- ❌ Claim cache-clearing speeds up your Mac — we clear caches to reclaim *space* and say so.
+- ❌ Permanently delete anything — Trash only, restore anytime.
+- ❌ Phone home — no analytics, no network calls, nothing leaves your Mac.
 
-## Install on macOS
+## Install
 
-### 1. Requirements
+### Download (easiest)
 
-- macOS 14 (Sonoma) or newer
-- Apple's Command Line Tools (no full Xcode needed). If you don't have them:
+1. Grab the latest `CleanUp-x.y.zip` from [Releases](https://github.com/syahrul84/cleanUp/releases)
+2. Unzip and move `CleanUp.app` to `/Applications`
+3. First launch: **right-click → Open → Open** (the app is not yet notarized by Apple)
+   - If macOS still refuses: `xattr -dr com.apple.quarantine /Applications/CleanUp.app`
+4. Recommended: grant **Full Disk Access** (System Settings → Privacy & Security) so scans can see everything
 
-```sh
-xcode-select --install
-```
+Requires macOS 14 (Sonoma) or newer.
 
-### 2. Build and install
+### Build from source
+
+Only Apple's Command Line Tools needed (`xcode-select --install`) — no Xcode:
 
 ```sh
 git clone https://github.com/syahrul84/cleanUp.git
@@ -38,34 +52,18 @@ cd cleanUp
 cp -R dist/CleanUp.app /Applications/
 ```
 
-### 3. First launch
+## Safety model
 
-The app is ad-hoc signed (not notarized by Apple), so the very first time you
-should launch it via right-click:
+Every removal uses `FileManager.trashItem` — files move to the Trash and can be restored. Every clean action shows a confirmation with the exact list first. Risky categories (iOS backups, Trash contents, orphan candidates) are never pre-selected.
 
-1. Open **Finder → Applications**
-2. **Right-click `CleanUp.app` → Open**, then click **Open** in the dialog
+## Support this project ♥
 
-After that it opens normally from Launchpad/Spotlight like any other app.
+CleanUp is free and always will be. If it saved you some gigabytes:
 
-> If macOS still refuses to open it (quarantine flag from a browser download),
-> clear the flag with:
->
-> ```sh
-> xattr -dr com.apple.quarantine /Applications/CleanUp.app
-> ```
+- ⭐️ **Star this repo** — it genuinely helps others find the app
+- 💖 **[Sponsor on GitHub](https://github.com/sponsors/syahrul84)**
+- ☕️ Tell a friend, file a bug, or send a PR
 
-### 4. Grant Full Disk Access (recommended)
+## License
 
-For complete scans (Safari data, Mail caches, etc.):
-**System Settings → Privacy & Security → Full Disk Access** → add `CleanUp.app`.
-The app shows a hint in its sidebar until access is granted.
-
-## Development
-
-```sh
-swift build             # quick compile check
-./build_app.sh          # release build + packages dist/CleanUp.app
-open dist/CleanUp.app   # run without installing
-```
-
+[MIT](LICENSE) © 2026 Syahrul Farhan

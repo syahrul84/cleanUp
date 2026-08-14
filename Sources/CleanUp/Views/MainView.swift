@@ -38,7 +38,10 @@ struct MainView: View {
                 SidebarHeader()
             }
             .safeAreaInset(edge: .bottom) {
-                FullDiskAccessHint()
+                VStack(spacing: 0) {
+                    FullDiskAccessHint()
+                    SupportLink()
+                }
             }
         } detail: {
             switch selection ?? .smartScan {
@@ -103,6 +106,26 @@ struct SidebarHeader: View {
             // scaled-to-fill image's invisible overflow steals clicks from the
             // first sidebar rows below the banner.
             .allowsHitTesting(false)
+    }
+}
+
+/// Quiet sponsor/repo link at the bottom of the sidebar — never a nag.
+struct SupportLink: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Link(destination: URL(string: "https://github.com/sponsors/syahrul84")!) {
+                Label("Support this project", systemImage: "heart")
+            }
+            Spacer()
+            Link(destination: URL(string: "https://github.com/syahrul84/cleanUp")!) {
+                Image(systemName: "star")
+            }
+            .help("Star CleanUp on GitHub")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 }
 
