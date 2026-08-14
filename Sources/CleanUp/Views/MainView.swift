@@ -27,6 +27,7 @@ enum Feature: String, CaseIterable, Identifiable {
 
 struct MainView: View {
     @State private var selection: Feature? = .smartScan
+    @StateObject private var updater = Updater.shared
 
     var body: some View {
         NavigationSplitView {
@@ -59,6 +60,74 @@ struct MainView: View {
         .onReceive(AppState.shared.$openFeatureRequest.compactMap { $0 }) { feature in
             selection = feature
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let release = updater.available {
+                UpdateBanner(release: release, updater: updater)
+            }
+        }
+        .alert("Software Update", isPresented: .init(
+            get: { updater.phase == .upToDate || isFailed },
+            set: { if !$0 { updater.phase = .idle } })) {
+            Button("OK") { updater.phase = .idle }
+        } message: {
+            if case .failed(let message) = updater.phase {
+                Text("Update check failed: \(message)")
+            } else {
+                Text("CleanUp \(updater.currentVersion) is the latest version.")
+            }
+        }
+        .task { updater.check() }
+    }
+
+    private var isFailed: Bool {
+        if case .failed = updater.phase { return true }
+        return false
+    }
+}
+
+/// Slim banner across the top of the window when a new version is available.
+struct UpdateBanner: View {
+    let release: Updater.Release
+    @ObservedObject var updater: Updater
+
+    private var busy: Bool {
+        updater.phase == .downloading || updater.phase == .installing
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.down.circle.fill").foregroundStyle(.tint)
+            Text("CleanUp \(release.version) is available")
+                .fontWeight(.medium)
+            Spacer()
+            Button {
+                updater.installUpdate()
+            } label: {
+                if busy {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text(updater.phase == .installing ? "Installing…" : "Downloading…")
+                    }
+                } else {
+                    Text("Update Now")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(busy)
+            Button {
+                updater.available = nil
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .disabled(busy)
+            .help("Remind me next launch")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
     }
 }
 

@@ -44,6 +44,7 @@ struct CleanUpApp: App {
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About CleanUp") { openWindow(id: "about") }
+                Button("Check for Updates…") { Updater.shared.check(manual: true) }
             }
         }
 

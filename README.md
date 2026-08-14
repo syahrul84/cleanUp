@@ -27,7 +27,7 @@ Native Swift + SwiftUI. Tiny footprint. Everything it removes goes to the **Tras
 - ❌ "Free up RAM" buttons — macOS manages memory correctly on its own; purging makes things slower.
 - ❌ Claim cache-clearing speeds up your Mac — we clear caches to reclaim *space* and say so.
 - ❌ Permanently delete anything — Trash only, restore anytime.
-- ❌ Phone home — no analytics, no network calls, nothing leaves your Mac.
+- ❌ Phone home — no analytics or tracking. The app's only network request is checking GitHub Releases for updates, and you can simply not click Update.
 
 ## Install
 
