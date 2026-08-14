@@ -62,7 +62,8 @@ CleanUp is free and always will be. If it saved you some gigabytes:
 
 - ⭐️ **Star this repo** — it genuinely helps others find the app
 - 💖 **[Sponsor on GitHub](https://github.com/sponsors/syahrul84)**
-- ☕️ Tell a friend, file a bug, or send a PR
+- ☕️ **[Buy me a coffee on Ko-fi](https://ko-fi.com/syahrul84)**
+- 🐛 Tell a friend, file a bug, or send a PR
 
 ## License
 

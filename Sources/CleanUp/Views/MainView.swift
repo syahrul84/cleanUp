@@ -117,6 +117,10 @@ struct SupportLink: View {
                 Label("Support this project", systemImage: "heart")
             }
             Spacer()
+            Link(destination: URL(string: "https://ko-fi.com/syahrul84")!) {
+                Image(systemName: "cup.and.saucer")
+            }
+            .help("Buy me a coffee on Ko-fi")
             Link(destination: URL(string: "https://github.com/syahrul84/cleanUp")!) {
                 Image(systemName: "star")
             }
