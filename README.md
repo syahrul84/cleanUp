@@ -14,6 +14,7 @@ Native Swift + SwiftUI. Tiny footprint. Everything it removes goes to the **Tras
   - Live CPU & memory hogs with a polite Quit
   - Reversible interface-animation tweaks (labeled honestly: they *feel* faster, they don't add horsepower)
   - Maintenance: flush DNS, restart Finder/Dock, re-index a folder in Spotlight
+- 🧠 **Memory Watch** — live memory footprint of every running app with per-app alert levels. When an app crosses your level (hello, browser tabs), a notification offers one-click Quit or Relaunch. Honest by design: macOS can't hard-cap an app's RAM, so we alert instead of pretending.
 - 🗑 **App Uninstaller** — removes an app *and* its leftovers: Application Support, Caches, Preferences, Containers, Launch Agents, saved state.
 - ✨ **Junk Cleaner** — user caches, logs, Xcode junk, developer caches (npm, pip, Homebrew, Gradle…), browser caches, old iOS backups, Trash.
 - 📄 **Duplicate Finder** — exact duplicates via size → partial hash → full SHA-256. Zero false positives.

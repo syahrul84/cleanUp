@@ -1,9 +1,14 @@
 import SwiftUI
+import UserNotifications
 
 /// Detects a launch triggered by the login item and hides the main window,
-/// so booting the Mac brings up only the menu bar widget.
-final class AppDelegate: NSObject, NSApplicationDelegate {
+/// so booting the Mac brings up only the menu bar widget. Also routes
+/// Memory Watch notification actions and starts its monitor.
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = self
+        MemoryWatch.shared.start()
+
         let event = NSAppleEventManager.shared().currentAppleEvent
         let launchedAtLogin = event?.eventID == kAEOpenApplication
             && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
@@ -12,6 +17,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.windows.filter { $0.canBecomeMain }.forEach { $0.close() }
             }
         }
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        MemoryWatch.handleAction(response.actionIdentifier,
+                                 userInfo: response.notification.request.content.userInfo)
+        completionHandler()
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler:
+                                    @escaping (UNNotificationPresentationOptions) -> Void) {
+        // Show alerts even while CleanUp is frontmost.
+        completionHandler([.banner, .sound])
     }
 }
 
