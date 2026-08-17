@@ -109,6 +109,7 @@ struct MenuBarContent: View {
     @StateObject private var loginItem = LoginItem()
     @AppStorage("menuBarShowsBars") private var showBars = false
     @State private var topProcesses: [ProcInfo] = []
+    @State private var topMemProcesses: [ProcInfo] = []
     @Environment(\.openWindow) private var openWindow
 
     private let processTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
@@ -121,29 +122,13 @@ struct MenuBarContent: View {
                     value: String(format: "%.0f%%", stats.cpuPercent),
                     fraction: stats.cpuPercent / 100)
 
-            if !topProcesses.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(topProcesses) { proc in
-                        HStack(spacing: 6) {
-                            if let icon = proc.icon {
-                                Image(nsImage: icon).resizable().frame(width: 14, height: 14)
-                            } else {
-                                Image(systemName: "gearshape")
-                                    .font(.system(size: 10)).frame(width: 14)
-                            }
-                            Text(proc.name).font(.caption).lineLimit(1)
-                            Spacer()
-                            Text(String(format: "%.0f%%", proc.cpuPercent))
-                                .font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .padding(.leading, 24)
-            }
+            processList(topProcesses) { String(format: "%.0f%%", $0.cpuPercent) }
 
             statRow(icon: "memorychip", title: "Memory",
                     value: "\(Format.bytes(stats.memUsed)) of \(Format.bytes(stats.memTotal))",
                     fraction: Double(stats.memUsed) / Double(max(stats.memTotal, 1)))
+
+            processList(topMemProcesses) { Format.bytes($0.memBytes) }
 
             statRow(icon: "internaldrive", title: "Disk free",
                     value: "\(disk.freeShort) of \(Format.bytes(disk.total))",
@@ -197,10 +182,36 @@ struct MenuBarContent: View {
         .onReceive(processTimer) { _ in refreshProcesses() }
     }
 
+    @ViewBuilder
+    private func processList(_ procs: [ProcInfo], value: @escaping (ProcInfo) -> String) -> some View {
+        if !procs.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(procs) { proc in
+                    HStack(spacing: 6) {
+                        if let icon = proc.icon {
+                            Image(nsImage: icon).resizable().frame(width: 14, height: 14)
+                        } else {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 10)).frame(width: 14)
+                        }
+                        Text(proc.name).font(.caption).lineLimit(1)
+                        Spacer()
+                        Text(value(proc))
+                            .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.leading, 24)
+        }
+    }
+
     private func refreshProcesses() {
         Task.detached(priority: .utility) {
-            let (cpu, _) = SpeedService.topProcesses(count: 3)
-            await MainActor.run { topProcesses = cpu }
+            let (cpu, mem) = SpeedService.topProcesses(count: 3)
+            await MainActor.run {
+                topProcesses = cpu
+                topMemProcesses = mem
+            }
         }
     }
 
