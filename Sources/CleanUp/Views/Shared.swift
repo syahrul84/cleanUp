@@ -24,36 +24,55 @@ struct RemovalRow: View {
     }
 }
 
-/// "Move N items (X) to Trash" button with a confirmation dialog and result alert.
+/// "Move N items (X) to Trash" button with a confirmation dialog, a busy
+/// indicator while trashing (large folders can take a while), and a result
+/// alert. Trashing runs off the main thread so the UI never freezes.
 struct TrashActionButton: View {
     let count: Int
     let size: Int64
-    let action: () -> (trashed: Int, errors: [String])
+    /// Evaluated on the main thread at confirm time; the returned URLs are
+    /// then trashed on a background task.
+    let urls: () -> [URL]
     var onDone: () -> Void = {}
 
     @State private var confirming = false
+    @State private var working = false
     @State private var resultMessage: String?
 
     var body: some View {
         Button {
             confirming = true
         } label: {
-            Label("Move \(count) item\(count == 1 ? "" : "s") (\(Format.bytes(size))) to Trash",
-                  systemImage: "trash")
+            if working {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Moving to Trash…")
+                }
+            } else {
+                Label("Move \(count) item\(count == 1 ? "" : "s") (\(Format.bytes(size))) to Trash",
+                      systemImage: "trash")
+            }
         }
         .buttonStyle(.borderedProminent)
-        .disabled(count == 0)
+        .disabled(count == 0 || working)
         .confirmationDialog("Move \(count) item\(count == 1 ? "" : "s") to Trash?",
                             isPresented: $confirming, titleVisibility: .visible) {
             Button("Move to Trash", role: .destructive) {
-                let result = action()
-                var message = "Moved \(result.trashed) item\(result.trashed == 1 ? "" : "s") to Trash."
-                if !result.errors.isEmpty {
-                    message += "\n\n\(result.errors.count) failed (likely needs Full Disk Access):\n"
-                        + result.errors.prefix(5).joined(separator: "\n")
+                let targets = urls()
+                working = true
+                Task.detached(priority: .userInitiated) {
+                    let result = FileUtils.trash(targets)
+                    await MainActor.run {
+                        working = false
+                        var message = "Moved \(result.trashed) item\(result.trashed == 1 ? "" : "s") to Trash."
+                        if !result.errors.isEmpty {
+                            message += "\n\n\(result.errors.count) failed (likely needs Full Disk Access):\n"
+                                + result.errors.prefix(5).joined(separator: "\n")
+                        }
+                        resultMessage = message
+                        onDone()
+                    }
                 }
-                resultMessage = message
-                onDone()
             }
         } message: {
             Text("Nothing is permanently deleted — you can restore items from the Trash.")

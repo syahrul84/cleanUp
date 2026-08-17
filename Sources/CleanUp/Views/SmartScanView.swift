@@ -79,10 +79,8 @@ struct SmartScanView: View {
                 HStack {
                     Button("Scan Again") { scan() }.disabled(scanning)
                     Spacer()
-                    TrashActionButton(count: includedItems.count, size: includedSize) {
-                        let result = FileUtils.trash(includedItems.map(\.url))
-                        return result
-                    } onDone: { scan() }
+                    TrashActionButton(count: includedItems.count, size: includedSize,
+                                      urls: { includedItems.map(\.url) }) { scan() }
                 }
                 .padding()
             }

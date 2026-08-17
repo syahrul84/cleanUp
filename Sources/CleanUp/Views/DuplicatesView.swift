@@ -39,10 +39,8 @@ struct DuplicatesView: View {
                 .disabled(scanning)
             }
             ToolbarItem(placement: .primaryAction) {
-                TrashActionButton(count: selectedItems.count, size: selectedSize) {
-                    let result = FileUtils.trash(selectedItems.map(\.url))
-                    return result
-                } onDone: {
+                TrashActionButton(count: selectedItems.count, size: selectedSize,
+                                  urls: { selectedItems.map(\.url) }) {
                     // Remove trashed files from the display; drop groups with <2 remaining.
                     for i in groups.indices {
                         groups[i].files.removeAll(where: \.selected)

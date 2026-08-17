@@ -35,10 +35,10 @@ struct LeftoversView: View {
                     .disabled(scanning)
             }
             ToolbarItem(placement: .primaryAction) {
-                TrashActionButton(count: selected.count, size: selectedSize) {
-                    let result = FileUtils.trash(selected.map(\.url))
-                    return result
-                } onDone: { items.removeAll(where: \.selected) }
+                TrashActionButton(count: selected.count, size: selectedSize,
+                                  urls: { selected.map(\.url) }) {
+                    items.removeAll(where: \.selected)
+                }
             }
         }
         .navigationTitle("Leftover Finder")

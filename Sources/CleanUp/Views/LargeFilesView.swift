@@ -61,10 +61,10 @@ struct LargeFilesView: View {
                 .disabled(scanning)
             }
             ToolbarItem(placement: .primaryAction) {
-                TrashActionButton(count: selected.count, size: selectedSize) {
-                    let result = FileUtils.trash(selected.map(\.url))
-                    return result
-                } onDone: { files.removeAll(where: \.selected) }
+                TrashActionButton(count: selected.count, size: selectedSize,
+                                  urls: { selected.map(\.url) }) {
+                    files.removeAll(where: \.selected)
+                }
             }
         }
         .navigationTitle("Large & Old Files")

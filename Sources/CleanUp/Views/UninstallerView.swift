@@ -73,6 +73,7 @@ struct UninstallSheet: View {
     @State private var appItem: RemovalItem?
     @State private var leftovers: [RemovalItem] = []
     @State private var loading = true
+    @State private var progressText = "Finding related files…"
 
     private var allSelected: [RemovalItem] {
         ([appItem].compactMap { $0 } + leftovers).filter(\.selected)
@@ -85,8 +86,13 @@ struct UninstallSheet: View {
                 Text("Uninstall \(app.name)").font(.title2.bold())
             }
             if loading {
-                ProgressView("Finding related files…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 10) {
+                    ProgressView()
+                    Text(progressText).foregroundStyle(.secondary)
+                    Text("Large apps with lots of data (chats, media) can take a minute.")
+                        .font(.caption).foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
                     if appItem != nil {
@@ -108,9 +114,8 @@ struct UninstallSheet: View {
                 Button("Cancel") { dismiss() }
                 Spacer()
                 TrashActionButton(count: allSelected.count,
-                                  size: allSelected.reduce(0) { $0 + $1.size }) {
-                    FileUtils.trash(allSelected.map(\.url))
-                } onDone: {
+                                  size: allSelected.reduce(0) { $0 + $1.size },
+                                  urls: { allSelected.map(\.url) }) {
                     dismiss()
                     onFinished()
                 }
@@ -120,11 +125,17 @@ struct UninstallSheet: View {
         .frame(width: 560, height: 460)
         .task {
             let target = app
-            let found = await Task.detached(priority: .userInitiated) {
-                LeftoverScanner.leftovers(for: target)
+            // Everything heavy happens off the main thread — including the
+            // app-bundle size, which may not be computed yet.
+            let (found, appSize) = await Task.detached(priority: .userInitiated) {
+                let found = LeftoverScanner.leftovers(for: target) { text in
+                    Task { @MainActor in progressText = text }
+                }
+                let size = target.size ?? FileUtils.size(of: target.url)
+                return (found, size)
             }.value
             appItem = RemovalItem(id: target.url.path, url: target.url, label: "Application",
-                                  size: target.size ?? FileUtils.size(of: target.url))
+                                  size: appSize)
             leftovers = found
             loading = false
         }

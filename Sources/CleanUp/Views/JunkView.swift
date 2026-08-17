@@ -47,10 +47,8 @@ struct JunkView: View {
                     .disabled(scanning)
             }
             ToolbarItem(placement: .primaryAction) {
-                TrashActionButton(count: selectedItems.count, size: selectedSize) {
-                    let result = FileUtils.trash(selectedItems.map(\.url))
-                    return result
-                } onDone: { scan() }
+                TrashActionButton(count: selectedItems.count, size: selectedSize,
+                                  urls: { selectedItems.map(\.url) }) { scan() }
             }
         }
         .navigationTitle("Junk Cleaner")

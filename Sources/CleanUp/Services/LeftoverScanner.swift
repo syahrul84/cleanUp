@@ -28,13 +28,17 @@ enum LeftoverScanner {
     }
 
     /// Leftover candidates for one specific app (used by the uninstaller).
-    static func leftovers(for app: AppInfo) -> [RemovalItem] {
+    /// `progress` is called with a human-readable status as locations are
+    /// scanned and large folders are measured.
+    static func leftovers(for app: AppInfo,
+                          progress: ((String) -> Void)? = nil) -> [RemovalItem] {
         var needles: [String] = []
         if let bid = app.bundleID?.lowercased() { needles.append(bid) }
         let appName = app.name.lowercased()
         var items: [RemovalItem] = []
 
         for loc in locations where FileUtils.exists(loc.url) {
+            progress?("Scanning \(loc.label)…")
             for child in FileUtils.children(of: loc.url, includeHidden: true) {
                 let entry = child.lastPathComponent.lowercased()
                 let matchesBundleID = needles.contains { entry == $0 || entry.hasPrefix($0 + ".") }
@@ -42,6 +46,9 @@ enum LeftoverScanner {
                 // e.g. "Slack" matching "Slack Helper Whatever".
                 let matchesName = !loc.filePrefixMatch && entry == appName
                 guard matchesBundleID || matchesName else { continue }
+                // Measuring can take a while for huge data folders (chat media,
+                // browser profiles) — say what we're doing.
+                progress?("Measuring \(child.lastPathComponent)…")
                 items.append(RemovalItem(id: child.path, url: child,
                                          label: loc.label, size: FileUtils.size(of: child)))
             }
