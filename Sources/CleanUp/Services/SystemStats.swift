@@ -4,9 +4,13 @@ import Darwin
 /// Live CPU and memory usage, sampled on a timer (Mach host statistics —
 /// the same source Activity Monitor uses).
 final class SystemStats: ObservableObject {
+    static let shared = SystemStats()
+
     @Published var cpuPercent: Double = 0
     @Published var memUsed: Int64 = 0
     let memTotal = Int64(ProcessInfo.processInfo.physicalMemory)
+
+    var memFraction: Double { Double(memUsed) / Double(max(memTotal, 1)) }
 
     private var previousLoad = host_cpu_load_info()
     private var hasPrevious = false

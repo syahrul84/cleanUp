@@ -8,6 +8,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
         MemoryWatch.shared.start()
+        // Keep stats live for the menu bar label's usage bars.
+        SystemStats.shared.start()
+        DiskStatus.shared.startAutoRefresh()
 
         let event = NSAppleEventManager.shared().currentAppleEvent
         let launchedAtLogin = event?.eventID == kAEOpenApplication
@@ -77,17 +80,38 @@ struct CleanUpApp: App {
         MenuBarExtra {
             MenuBarContent()
         } label: {
-            Image(nsImage: Self.menuBarIcon)
+            MenuBarLabel()
         }
         .menuBarExtraStyle(.window)
     }
 }
 
+/// The status-item icon: the logo, or live usage bars when the user opts in.
+struct MenuBarLabel: View {
+    @AppStorage("menuBarShowsBars") private var showBars = false
+    @ObservedObject private var stats = SystemStats.shared
+    @ObservedObject private var disk = DiskStatus.shared
+
+    var body: some View {
+        if showBars {
+            Image(nsImage: MenuBarBars.image(cpu: stats.cpuPercent / 100,
+                                             mem: stats.memFraction,
+                                             disk: disk.usedFraction))
+        } else {
+            Image(nsImage: CleanUpApp.menuBarIcon)
+        }
+    }
+}
+
 struct MenuBarContent: View {
-    @StateObject private var disk = DiskStatus()
-    @StateObject private var stats = SystemStats()
+    @ObservedObject private var disk = DiskStatus.shared
+    @ObservedObject private var stats = SystemStats.shared
     @StateObject private var loginItem = LoginItem()
+    @AppStorage("menuBarShowsBars") private var showBars = false
+    @State private var topProcesses: [ProcInfo] = []
     @Environment(\.openWindow) private var openWindow
+
+    private let processTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -96,6 +120,26 @@ struct MenuBarContent: View {
             statRow(icon: "cpu", title: "CPU",
                     value: String(format: "%.0f%%", stats.cpuPercent),
                     fraction: stats.cpuPercent / 100)
+
+            if !topProcesses.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(topProcesses) { proc in
+                        HStack(spacing: 6) {
+                            if let icon = proc.icon {
+                                Image(nsImage: icon).resizable().frame(width: 14, height: 14)
+                            } else {
+                                Image(systemName: "gearshape")
+                                    .font(.system(size: 10)).frame(width: 14)
+                            }
+                            Text(proc.name).font(.caption).lineLimit(1)
+                            Spacer()
+                            Text(String(format: "%.0f%%", proc.cpuPercent))
+                                .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(.leading, 24)
+            }
 
             statRow(icon: "memorychip", title: "Memory",
                     value: "\(Format.bytes(stats.memUsed)) of \(Format.bytes(stats.memTotal))",
@@ -113,6 +157,11 @@ struct MenuBarContent: View {
             ))
             .toggleStyle(.switch)
             .controlSize(.small)
+
+            Toggle("Show usage bars in menu bar", isOn: $showBars)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help("Replace the logo with live CPU / memory / disk bars — green low, blue normal, red high")
             if let error = loginItem.lastError {
                 Text(error).font(.caption2).foregroundStyle(.red)
             }
@@ -143,9 +192,16 @@ struct MenuBarContent: View {
         .frame(width: 280)
         .onAppear {
             disk.refresh()
-            stats.start()
+            refreshProcesses()
         }
-        .onDisappear { stats.stop() }
+        .onReceive(processTimer) { _ in refreshProcesses() }
+    }
+
+    private func refreshProcesses() {
+        Task.detached(priority: .utility) {
+            let (cpu, _) = SpeedService.topProcesses(count: 3)
+            await MainActor.run { topProcesses = cpu }
+        }
     }
 
     @ViewBuilder

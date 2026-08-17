@@ -28,8 +28,22 @@ final class AppState: ObservableObject {
 
 /// Free/total capacity of the boot volume, refreshed on demand.
 final class DiskStatus: ObservableObject {
+    static let shared = DiskStatus()
+
     @Published var free: Int64 = 0
     @Published var total: Int64 = 0
+
+    private var timer: Timer?
+
+    var usedFraction: Double { 1 - Double(free) / Double(max(total, 1)) }
+
+    /// Keep the value fresh for the always-visible menu bar (disk changes slowly).
+    func startAutoRefresh() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            self?.refresh()
+        }
+    }
 
     init() { refresh() }
 
