@@ -40,7 +40,7 @@ Native Swift + SwiftUI. Tiny footprint. Everything it removes goes to the **Tras
    - If macOS still refuses: `xattr -dr com.apple.quarantine /Applications/CleanUp.app`
 4. Recommended: grant **Full Disk Access** (System Settings → Privacy & Security) so scans can see everything
 
-Requires macOS 14 (Sonoma) or newer.
+Requires macOS 14 (Sonoma) or newer. Universal binary — runs natively on both Apple Silicon and Intel Macs.
 
 ### Build from source
 

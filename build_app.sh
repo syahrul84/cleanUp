@@ -4,9 +4,17 @@ set -e
 cd "$(dirname "$0")"
 
 CONFIG=${1:-release}
-swift build -c "$CONFIG"
+# Universal binary: build each arch separately (works with Command Line
+# Tools alone; --arch x2 would need full Xcode), then merge with lipo.
+swift build -c "$CONFIG" --triple arm64-apple-macosx
+swift build -c "$CONFIG" --triple x86_64-apple-macosx
+mkdir -p ".build/universal-$CONFIG"
+lipo -create \
+    ".build/arm64-apple-macosx/$CONFIG/CleanUp" \
+    ".build/x86_64-apple-macosx/$CONFIG/CleanUp" \
+    -output ".build/universal-$CONFIG/CleanUp"
 
-BIN=".build/$CONFIG/CleanUp"
+BIN=".build/universal-$CONFIG/CleanUp"
 APP="dist/CleanUp.app"
 
 rm -rf "$APP"
