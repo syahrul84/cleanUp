@@ -28,9 +28,6 @@ struct MemoryWatchView: View {
                 }
             } header: {
                 Text("Running applications")
-            } footer: {
-                Text("macOS can't hard-cap an app's memory — no tool can. Memory Watch alerts you when an app crosses your level, so you can quit or relaunch it before it swamps your Mac. Checks every 5 seconds; alerts repeat at most every 5 minutes per app.")
-                    .font(.caption).foregroundStyle(.tertiary)
             }
         }
         .navigationTitle("Memory Watch")
