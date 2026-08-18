@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Keep stats live for the menu bar label's usage bars.
         SystemStats.shared.start()
         DiskStatus.shared.startAutoRefresh()
+        Sensors.shared.start()
 
         let event = NSAppleEventManager.shared().currentAppleEvent
         let launchedAtLogin = event?.eventID == kAEOpenApplication
@@ -91,12 +92,16 @@ struct MenuBarLabel: View {
     @AppStorage("menuBarShowsBars") private var showBars = false
     @ObservedObject private var stats = SystemStats.shared
     @ObservedObject private var disk = DiskStatus.shared
+    @ObservedObject private var sensors = Sensors.shared
 
     var body: some View {
         if showBars {
-            Image(nsImage: MenuBarBars.image(cpu: stats.cpuPercent / 100,
-                                             mem: stats.memFraction,
-                                             disk: disk.usedFraction))
+            Image(nsImage: MenuBarBars.image(
+                cpu: stats.cpuPercent / 100,
+                mem: stats.memFraction,
+                disk: disk.usedFraction,
+                tempCelsius: sensors.cpuTemperature,
+                fanFraction: sensors.fans.first?.fraction))
         } else {
             Image(nsImage: CleanUpApp.menuBarIcon)
         }
@@ -160,7 +165,7 @@ struct MenuBarContent: View {
             Toggle("Show usage bars in menu bar", isOn: $showBars)
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .help("Replace the logo with live CPU / memory / disk bars — green low, blue normal, red high")
+                .help("Replace the logo with live bars — CPU, memory, disk, temperature, fan. Green low, blue normal, red high")
             if let error = loginItem.lastError {
                 Text(error).font(.caption2).foregroundStyle(.red)
             }

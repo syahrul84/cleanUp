@@ -170,6 +170,16 @@ final class Sensors: ObservableObject {
     private lazy var smc = SMCConnection()
     private lazy var hid = HIDTemperatureReader()
     private static let intelCPUKeys = ["TC0P", "TC0E", "TC0F", "TCXC", "TC0D"]
+    private var timer: Timer?
+
+    /// Continuous sampling so the menu bar label can show live sensor bars.
+    func start() {
+        guard timer == nil else { return }
+        sample()
+        timer = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in
+            self?.sample()
+        }
+    }
 
     func sample() {
         DispatchQueue.global(qos: .utility).async { [self] in
