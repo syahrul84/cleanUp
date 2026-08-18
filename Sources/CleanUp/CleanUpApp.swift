@@ -110,6 +110,7 @@ struct MenuBarContent: View {
     @AppStorage("menuBarShowsBars") private var showBars = false
     @State private var topProcesses: [ProcInfo] = []
     @State private var topMemProcesses: [ProcInfo] = []
+    @ObservedObject private var sensors = Sensors.shared
     @Environment(\.openWindow) private var openWindow
 
     private let processTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
@@ -133,6 +134,19 @@ struct MenuBarContent: View {
             statRow(icon: "internaldrive", title: "Disk free",
                     value: "\(disk.freeShort) of \(Format.bytes(disk.total))",
                     fraction: 1 - Double(disk.free) / Double(max(disk.total, 1)))
+
+            if let temp = sensors.cpuTemperature {
+                statRow(icon: "thermometer.medium", title: "CPU temp",
+                        value: String(format: "%.0f°C", temp),
+                        fraction: temp / 100)
+            }
+
+            ForEach(sensors.fans) { fan in
+                statRow(icon: "fan",
+                        title: sensors.fans.count > 1 ? "Fan \(fan.id + 1)" : "Fan",
+                        value: fan.rpm < 1 ? "off" : String(format: "%.0f RPM", fan.rpm),
+                        fraction: fan.fraction ?? 0)
+            }
 
             Divider()
 
@@ -178,8 +192,12 @@ struct MenuBarContent: View {
         .onAppear {
             disk.refresh()
             refreshProcesses()
+            sensors.sample()
         }
-        .onReceive(processTimer) { _ in refreshProcesses() }
+        .onReceive(processTimer) { _ in
+            refreshProcesses()
+            sensors.sample()
+        }
     }
 
     @ViewBuilder
