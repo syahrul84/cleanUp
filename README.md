@@ -6,6 +6,10 @@ Native Swift + SwiftUI. Tiny footprint. Everything it removes goes to the **Tras
 
 ![CleanUp — Smart Scan](docs/screenshot-smartscan.png)
 
+<p align="center">
+  <img src="docs/screenshot-menubar.png" width="280" alt="Menu bar widget — live CPU, memory, disk, temperature and fan, with top processes">
+</p>
+
 ## Features
 
 - 🪄 **Smart Scan** — one click checks junk, app leftovers and Trash, shows how much you can reclaim, and cleans it in one action.
