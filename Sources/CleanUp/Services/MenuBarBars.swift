@@ -12,15 +12,18 @@ enum MenuBarBars {
         return .systemGreen
     }
 
-    static func image(cpu: Double, mem: Double, disk: Double,
-                      tempCelsius: Double? = nil, fanFraction: Double? = nil) -> NSImage {
+    /// Any metric passed as nil is omitted. Returns nil when no bars remain
+    /// (caller falls back to the logo icon).
+    static func image(cpu: Double?, mem: Double?, disk: Double?,
+                      tempCelsius: Double? = nil, fanFraction: Double? = nil) -> NSImage? {
         let barWidth = 5.0, gap = 3.0, height = 16.0
-        var bars: [(Double, NSColor)] = [
-            (cpu, color(for: cpu)),
-            (mem, color(for: mem)),
+        var bars: [(Double, NSColor)] = []
+        if let cpu { bars.append((cpu, color(for: cpu))) }
+        if let mem { bars.append((mem, color(for: mem))) }
+        if let disk {
             // Disk fills slowly and living at 70% is normal — shift thresholds up.
-            (disk, color(for: disk, highFrom: 0.9, normalFrom: 0.6)),
-        ]
+            bars.append((disk, color(for: disk, highFrom: 0.9, normalFrom: 0.6)))
+        }
         if let tempCelsius {
             let fraction = tempCelsius / 100
             bars.append((fraction, color(for: fraction, highFrom: 0.8, normalFrom: 0.6)))
@@ -28,6 +31,7 @@ enum MenuBarBars {
         if let fanFraction {
             bars.append((fanFraction, color(for: fanFraction)))
         }
+        guard !bars.isEmpty else { return nil }
         let width = barWidth * Double(bars.count) + gap * Double(bars.count - 1)
 
         let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in

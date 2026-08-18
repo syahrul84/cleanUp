@@ -90,18 +90,23 @@ struct CleanUpApp: App {
 /// The status-item icon: the logo, or live usage bars when the user opts in.
 struct MenuBarLabel: View {
     @AppStorage("menuBarShowsBars") private var showBars = false
+    @AppStorage("menuBarBarCPU") private var barCPU = true
+    @AppStorage("menuBarBarMemory") private var barMemory = true
+    @AppStorage("menuBarBarDisk") private var barDisk = true
+    @AppStorage("menuBarBarTemp") private var barTemp = true
+    @AppStorage("menuBarBarFan") private var barFan = true
     @ObservedObject private var stats = SystemStats.shared
     @ObservedObject private var disk = DiskStatus.shared
     @ObservedObject private var sensors = Sensors.shared
 
     var body: some View {
-        if showBars {
-            Image(nsImage: MenuBarBars.image(
-                cpu: stats.cpuPercent / 100,
-                mem: stats.memFraction,
-                disk: disk.usedFraction,
-                tempCelsius: sensors.cpuTemperature,
-                fanFraction: sensors.fans.first?.fraction))
+        if showBars, let bars = MenuBarBars.image(
+            cpu: barCPU ? stats.cpuPercent / 100 : nil,
+            mem: barMemory ? stats.memFraction : nil,
+            disk: barDisk ? disk.usedFraction : nil,
+            tempCelsius: barTemp ? sensors.cpuTemperature : nil,
+            fanFraction: barFan ? sensors.fans.first?.fraction : nil) {
+            Image(nsImage: bars)
         } else {
             Image(nsImage: CleanUpApp.menuBarIcon)
         }
@@ -113,6 +118,11 @@ struct MenuBarContent: View {
     @ObservedObject private var stats = SystemStats.shared
     @StateObject private var loginItem = LoginItem()
     @AppStorage("menuBarShowsBars") private var showBars = false
+    @AppStorage("menuBarBarCPU") private var barCPU = true
+    @AppStorage("menuBarBarMemory") private var barMemory = true
+    @AppStorage("menuBarBarDisk") private var barDisk = true
+    @AppStorage("menuBarBarTemp") private var barTemp = true
+    @AppStorage("menuBarBarFan") private var barFan = true
     @State private var topProcesses: [ProcInfo] = []
     @State private var topMemProcesses: [ProcInfo] = []
     @ObservedObject private var sensors = Sensors.shared
@@ -165,7 +175,25 @@ struct MenuBarContent: View {
             Toggle("Show usage bars in menu bar", isOn: $showBars)
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .help("Replace the logo with live bars — CPU, memory, disk, temperature, fan. Green low, blue normal, red high")
+                .help("Replace the logo with live bars — green low, blue normal, red high")
+
+            if showBars {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 10) {
+                        Toggle("CPU", isOn: $barCPU)
+                        Toggle("Memory", isOn: $barMemory)
+                        Toggle("Disk", isOn: $barDisk)
+                    }
+                    HStack(spacing: 10) {
+                        Toggle("Temperature", isOn: $barTemp)
+                        Toggle("Fan", isOn: $barFan)
+                    }
+                }
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .font(.caption)
+                .padding(.leading, 12)
+            }
             if let error = loginItem.lastError {
                 Text(error).font(.caption2).foregroundStyle(.red)
             }
