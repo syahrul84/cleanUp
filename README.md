@@ -21,7 +21,7 @@ Native Swift + SwiftUI. Tiny footprint. Everything it removes goes to the **Tras
 - 💾 **Large & Old Files** — everything over 50 MB with last-opened dates.
 - 🔍 **Leftover Finder** — orphaned files from apps you deleted long ago (Apple's own files always excluded).
 - ⚡️ **Startup Items** — see launch agents and daemons; switch your own agents off and on again, fully reversibly.
-- 📊 **Menu bar widget** — live CPU, memory and disk usage plus the top CPU-hungry processes, launch-at-login toggle, one-click Smart Scan. Optional live usage bars as the menu bar icon (green = low, blue = normal, red = high).
+- 📊 **Menu bar widget** — live CPU, memory, disk, **CPU temperature and fan speed**, plus the top CPU- and memory-hungry processes, launch-at-login toggle, one-click Smart Scan. Optional live usage bars as the menu bar icon (green = low, blue = normal, red = high).
 
 ## What CleanUp will never do
 
