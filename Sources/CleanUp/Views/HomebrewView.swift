@@ -1,7 +1,14 @@
 import SwiftUI
 
 struct HomebrewView: View {
+    private enum Tab: String, CaseIterable {
+        case updates = "Updates"
+        case installed = "Installed"
+    }
+
     @ObservedObject private var brew = HomebrewService.shared
+    @State private var tab: Tab = .updates
+    @State private var search = ""
     @State private var confirmUninstall: BrewPackage?
     @State private var showLog = false
 
@@ -17,7 +24,7 @@ struct HomebrewView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                list
+                content
             }
         }
         .toolbar {
@@ -45,27 +52,66 @@ struct HomebrewView: View {
         }
     }
 
-    private var list: some View {
+    // MARK: - Layout
+
+    private var content: some View {
         VStack(spacing: 0) {
             if let title = brew.busyTitle {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(title)
+                    Text(title).font(.callout)
                     Spacer()
                     Button(showLog ? "Hide Log" : "Show Log") { showLog.toggle() }
                         .controlSize(.small)
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 16)
                 .padding(.vertical, 8)
                 .background(.bar)
                 .overlay(alignment: .bottom) { Divider() }
             }
 
-            List {
-                maintenanceSection
-                updatesSection
-                installedSection
+            HStack(spacing: 12) {
+                cleanupCard
+                orphansCard
+                updatesCard
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+
+            HStack {
+                Picker("", selection: $tab) {
+                    ForEach(Tab.allCases, id: \.self) { tab in
+                        Text(label(for: tab)).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 260)
+
+                Spacer()
+
+                if tab == .installed {
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("Filter", text: $search)
+                            .textFieldStyle(.plain)
+                            .frame(width: 140)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+
+            Group {
+                switch tab {
+                case .updates: updatesList
+                case .installed: installedList
+                }
+            }
+            .frame(maxHeight: .infinity)
 
             if showLog || (brew.busyTitle != nil && !brew.log.isEmpty) {
                 logView
@@ -73,100 +119,158 @@ struct HomebrewView: View {
         }
     }
 
-    private var maintenanceSection: some View {
-        Section {
-            HStack {
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Downloads & old versions")
-                        Text(brew.cleanupEstimate.map { "About \($0) reclaimable" }
-                             ?? "Nothing to clean right now")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                } icon: {
-                    Image(systemName: "sparkles")
-                }
-                Spacer()
-                Button("Clean Up") { brew.cleanUp() }
-                    .disabled(brew.cleanupEstimate == nil || brew.busyTitle != nil)
-            }
-            HStack {
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Orphaned dependencies")
-                        Text(brew.orphans.isEmpty ? "None — nothing was left behind"
-                             : brew.orphans.joined(separator: ", "))
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    }
-                } icon: {
-                    Image(systemName: "magnifyingglass")
-                }
-                Spacer()
-                Button("Remove \(brew.orphans.count)") { brew.removeOrphans() }
-                    .disabled(brew.orphans.isEmpty || brew.busyTitle != nil)
-            }
-        } header: {
-            Text("Maintenance")
-        } footer: {
-            Text("Actions run Homebrew's own commands — removed items don't go to the Trash, but anything can be reinstalled with brew install.")
-                .font(.caption).foregroundStyle(.tertiary)
+    private func label(for tab: Tab) -> String {
+        switch tab {
+        case .updates: return brew.outdated.isEmpty ? "Updates" : "Updates (\(brew.outdated.count))"
+        case .installed: return brew.installed.isEmpty ? "Installed" : "Installed (\(brew.installed.count))"
         }
     }
 
-    private var updatesSection: some View {
-        Section {
+    // MARK: - Summary cards
+
+    private var cleanupCard: some View {
+        summaryCard(icon: "sparkles", tint: .blue,
+                    title: "Reclaimable",
+                    value: brew.cleanupEstimate ?? (brew.scanning ? "…" : "0 B"),
+                    caption: "downloads & old versions") {
+            Button("Clean Up") { brew.cleanUp() }
+                .controlSize(.small)
+                .disabled(brew.cleanupEstimate == nil || brew.busyTitle != nil)
+        }
+    }
+
+    private var orphansCard: some View {
+        summaryCard(icon: "puzzlepiece.extension", tint: .orange,
+                    title: "Orphaned",
+                    value: "\(brew.orphans.count)",
+                    caption: brew.orphans.isEmpty ? "no unused dependencies"
+                                                  : "unused dependencies") {
+            Button("Remove") { brew.removeOrphans() }
+                .controlSize(.small)
+                .disabled(brew.orphans.isEmpty || brew.busyTitle != nil)
+        }
+    }
+
+    private var updatesCard: some View {
+        summaryCard(icon: "arrow.down.circle", tint: .green,
+                    title: "Updates",
+                    value: "\(brew.outdated.count)",
+                    caption: brew.outdated.isEmpty ? "everything up to date"
+                                                   : "packages outdated") {
+            Button("Update All") { brew.upgradeAll() }
+                .controlSize(.small)
+                .disabled(brew.outdated.isEmpty || brew.busyTitle != nil)
+        }
+    }
+
+    private func summaryCard(icon: String, tint: Color, title: String,
+                             value: String, caption: String,
+                             @ViewBuilder action: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: icon)
+                .font(.caption.bold())
+                .foregroundStyle(tint)
+            Text(value)
+                .font(.title2.bold())
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(caption)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 2)
+            action()
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: 112)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    // MARK: - Lists
+
+    private var updatesList: some View {
+        Group {
             if brew.outdated.isEmpty {
-                Text(brew.scanning ? "Checking…" : "Everything is up to date.")
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(brew.outdated) { package in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(package.name)
-                        Text("\(package.installed) → \(package.latest)")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    if package.isCask {
-                        Text("cask").font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(.quaternary, in: Capsule())
-                    }
-                    Spacer()
-                    Button("Update") { brew.upgrade(package) }
-                        .disabled(brew.busyTitle != nil)
+                VStack(spacing: 8) {
+                    Image(systemName: brew.scanning ? "hourglass" : "checkmark.seal")
+                        .font(.system(size: 32)).foregroundStyle(.tertiary)
+                    Text(brew.scanning ? "Checking for updates…" : "Everything is up to date.")
+                        .foregroundStyle(.secondary)
                 }
-            }
-        } header: {
-            HStack {
-                Text("Updates (\(brew.outdated.count))")
-                Spacer()
-                if brew.outdated.count > 1 {
-                    Button("Update All") { brew.upgradeAll() }
-                        .font(.caption)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(brew.outdated) { package in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(package.name)
+                                if package.isCask { caskBadge }
+                            }
+                            HStack(spacing: 4) {
+                                Text(package.installed).foregroundStyle(.secondary)
+                                Image(systemName: "arrow.right").font(.system(size: 8))
+                                    .foregroundStyle(.tertiary)
+                                Text(package.latest).foregroundStyle(.green)
+                            }
+                            .font(.caption)
+                        }
+                        Spacer()
+                        Button {
+                            brew.upgrade(package)
+                        } label: {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .font(.title3)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.tint)
                         .disabled(brew.busyTitle != nil)
+                        .help("Update \(package.name)")
+                    }
+                    .padding(.vertical, 3)
                 }
             }
         }
     }
 
-    private var installedSection: some View {
-        Section("Installed (\(brew.installed.count))") {
-            ForEach(brew.installed) { package in
-                HStack {
-                    Text(package.name)
-                    if package.isCask {
-                        Text("cask").font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(.quaternary, in: Capsule())
-                    }
-                    Spacer()
-                    Text(package.size.map { Format.bytes($0) } ?? "…")
-                        .monospacedDigit().foregroundStyle(.secondary)
-                    Button("Uninstall") { confirmUninstall = package }
-                        .controlSize(.small)
-                        .disabled(brew.busyTitle != nil)
+    private var installedList: some View {
+        List(filteredInstalled) { package in
+            HStack {
+                Image(systemName: package.isCask ? "app.dashed" : "shippingbox")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18)
+                Text(package.name)
+                if package.isCask { caskBadge }
+                Spacer()
+                Text(package.size.map { Format.bytes($0) } ?? "…")
+                    .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                Button {
+                    confirmUninstall = package
+                } label: {
+                    Image(systemName: "trash")
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .disabled(brew.busyTitle != nil)
+                .help("Uninstall \(package.name)")
             }
+            .padding(.vertical, 2)
         }
     }
+
+    private var filteredInstalled: [BrewPackage] {
+        search.isEmpty ? brew.installed
+            : brew.installed.filter { $0.name.localizedCaseInsensitiveContains(search) }
+    }
+
+    private var caskBadge: some View {
+        Text("cask")
+            .font(.caption2)
+            .padding(.horizontal, 5).padding(.vertical, 1)
+            .background(.quaternary, in: Capsule())
+    }
+
+    // MARK: - Log
 
     private var logView: some View {
         ScrollViewReader { proxy in
