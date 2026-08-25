@@ -10,6 +10,7 @@ enum Feature: String, CaseIterable, Identifiable {
     case largeFiles = "Large & Old Files"
     case leftovers = "Leftover Finder"
     case startupItems = "Startup Items"
+    case homebrew = "Homebrew"
 
     var id: String { rawValue }
     var systemImage: String {
@@ -23,6 +24,7 @@ enum Feature: String, CaseIterable, Identifiable {
         case .largeFiles: return "externaldrive.badge.exclamationmark"
         case .leftovers: return "magnifyingglass"
         case .startupItems: return "power"
+        case .homebrew: return "mug"
         }
     }
 }
@@ -54,6 +56,7 @@ struct MainView: View {
             case .largeFiles: LargeFilesView()
             case .leftovers: LeftoversView()
             case .startupItems: StartupItemsView()
+            case .homebrew: HomebrewView()
             }
         }
         .navigationTitle("CleanUp")
