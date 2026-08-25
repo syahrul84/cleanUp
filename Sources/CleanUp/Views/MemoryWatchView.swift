@@ -3,7 +3,18 @@ import SwiftUI
 struct MemoryWatchView: View {
     @ObservedObject private var watch = MemoryWatch.shared
 
+    private var overCount: Int { watch.apps.filter(\.isOver).count }
+
     var body: some View {
+        VStack(spacing: 0) {
+        if !watch.apps.isEmpty {
+            StatBanner(icon: "memorychip",
+                       tint: overCount > 0 ? .orange : .green,
+                       title: "\(Format.bytes(watch.apps.reduce(0) { $0 + $1.footprint })) in use by \(watch.apps.count) apps",
+                       caption: overCount > 0
+                           ? "\(overCount) app\(overCount == 1 ? "" : "s") over their alert level"
+                           : "All apps within their alert levels")
+        }
         List {
             if watch.notificationsDenied {
                 Section {
@@ -29,6 +40,7 @@ struct MemoryWatchView: View {
             } header: {
                 Text("Running applications")
             }
+        }
         }
         .navigationTitle("Memory Watch")
         .navigationSubtitle("\(watch.apps.count) apps running")

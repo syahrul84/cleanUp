@@ -15,6 +15,10 @@ struct LargeFilesView: View {
                                 emptyText: hasScanned ? "No files over 50 MB found."
                                                       : "Choose folders to find large files (over 50 MB).")
             } else {
+                VStack(spacing: 0) {
+                StatBanner(icon: "externaldrive.badge.exclamationmark", tint: .indigo,
+                           title: "\(files.count) large files — \(Format.bytes(files.reduce(0) { $0 + $1.size }))",
+                           caption: "\(selected.count) selected — \(Format.bytes(selectedSize))")
                 Table(of: Binding<LargeFile>.self) {
                     TableColumn("") { $file in
                         Toggle("", isOn: $file.selected).labelsHidden()
@@ -49,6 +53,7 @@ struct LargeFilesView: View {
                         let urls = files.filter { ids.contains($0.id) }.map(\.url)
                         NSWorkspace.shared.activateFileViewerSelecting(urls)
                     }
+                }
                 }
             }
         }

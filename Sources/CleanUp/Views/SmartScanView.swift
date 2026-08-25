@@ -51,10 +51,15 @@ struct SmartScanView: View {
             } else {
                 VStack(spacing: 4) {
                     Text(Format.bytes(includedSize)).font(.system(size: 42, weight: .bold))
+                        .foregroundStyle(.tint)
                     Text("selected of \(Format.bytes(totalSize)) reclaimable")
                         .foregroundStyle(.secondary)
                 }
-                .padding(.top, 24)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 18)
+                .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
 
                 List {
                     ForEach($rows) { $row in

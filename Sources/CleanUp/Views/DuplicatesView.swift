@@ -19,6 +19,10 @@ struct DuplicatesView: View {
                                                       : "Choose folders to scan for exact duplicates.",
                                 progressText: progressText)
             } else {
+                VStack(spacing: 0) {
+                StatBanner(icon: "doc.on.doc", tint: .purple,
+                           title: "\(groups.count) duplicate group\(groups.count == 1 ? "" : "s")",
+                           caption: "\(Format.bytes(groups.reduce(0) { $0 + $1.wastedSize })) wasted — \(Format.bytes(selectedSize)) selected for removal")
                 List {
                     ForEach($groups) { $group in
                         Section("\(group.files.count)× \(group.files.first?.url.lastPathComponent ?? "") — wasted \(Format.bytes(group.wastedSize))") {
@@ -27,6 +31,7 @@ struct DuplicatesView: View {
                             }
                         }
                     }
+                }
                 }
             }
         }

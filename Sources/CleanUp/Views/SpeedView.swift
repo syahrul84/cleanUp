@@ -10,11 +10,13 @@ struct SpeedView: View {
     @State private var refreshTimer: Timer?
 
     var body: some View {
-        List {
-            healthSection
-            hogsSection
-            tweaksSection
-            maintenanceSection
+        VStack(spacing: 0) {
+            healthGrid
+            List {
+                hogsSection
+                tweaksSection
+                maintenanceSection
+            }
         }
         .navigationTitle("Speed")
         .alert("Speed", isPresented: .init(
@@ -32,27 +34,34 @@ struct SpeedView: View {
 
     // MARK: Sections
 
-    private var healthSection: some View {
-        Section("Health check") {
+    private var healthGrid: some View {
+        Group {
             if checks.isEmpty {
-                HStack { ProgressView(); Text("Checking…").foregroundStyle(.secondary) }
-            }
-            ForEach(checks) { check in
-                HStack(spacing: 10) {
-                    Image(systemName: check.icon).frame(width: 20)
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Circle().fill(Color(nsColor: check.status.color)).frame(width: 8, height: 8)
-                            Text(check.title)
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Checking your Mac's health…").foregroundStyle(.secondary)
+                }
+                .frame(height: 60)
+            } else {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
+                                    GridItem(.flexible(), spacing: 12),
+                                    GridItem(.flexible(), spacing: 12),
+                                    GridItem(.flexible())], spacing: 12) {
+                    ForEach(checks) { check in
+                        StatCard(icon: check.icon,
+                                 tint: Color(nsColor: check.status.color),
+                                 title: check.title,
+                                 value: check.value,
+                                 caption: check.detail,
+                                 actionLabel: check.goTo != nil ? "Fix…" : nil,
+                                 height: 118) {
+                            if let target = check.goTo { AppState.shared.open(target) }
                         }
-                        Text(check.detail).font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    if let target = check.goTo {
-                        Button("Fix…") { AppState.shared.open(target) }
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 6)
             }
         }
     }

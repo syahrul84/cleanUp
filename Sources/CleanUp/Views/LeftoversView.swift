@@ -15,6 +15,10 @@ struct LeftoversView: View {
                                 emptyText: hasScanned ? "No orphaned files found."
                                                       : "Scan ~/Library for files left behind by deleted apps.")
             } else {
+                VStack(spacing: 0) {
+                StatBanner(icon: "magnifyingglass", tint: .orange,
+                           title: "\(items.count) orphaned item\(items.count == 1 ? "" : "s") — \(Format.bytes(items.reduce(0) { $0 + $1.size }))",
+                           caption: "\(selected.count) selected — \(Format.bytes(selectedSize))")
                 List {
                     Section {
                         ForEach($items) { $item in
@@ -26,6 +30,7 @@ struct LeftoversView: View {
                         Text("Review before removing: files from menu-bar tools, CLI tools or plug-ins can look orphaned. Nothing is selected by default.")
                             .font(.caption).foregroundStyle(.tertiary)
                     }
+                }
                 }
             }
         }

@@ -90,6 +90,12 @@ struct HomebrewView: View {
 
                 Spacer()
 
+                if tab == .updates && !brew.outdated.isEmpty {
+                    Button("Update All") { brew.upgradeAll() }
+                        .controlSize(.small)
+                        .disabled(brew.busyTitle != nil)
+                }
+
                 if tab == .installed {
                     HStack(spacing: 4) {
                         Image(systemName: "magnifyingglass").foregroundStyle(.secondary)

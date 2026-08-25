@@ -20,6 +20,7 @@ struct HealthCheck: Identifiable {
     let icon: String
     let title: String
     let status: HealthStatus
+    let value: String          // short headline figure for the card
     let detail: String
     var goTo: Feature? = nil   // deep link to another tab that fixes it
 }
@@ -62,8 +63,9 @@ enum SpeedService {
             id: "disk", icon: "internaldrive",
             title: "Disk headroom",
             status: freePct > 15 ? .good : freePct > 8 ? .warn : .bad,
-            detail: String(format: "%@ free (%.0f%%). Below ~15%% macOS slows down.",
-                           Format.bytes(free), freePct),
+            value: String(format: "%.0f%% free", freePct),
+            detail: String(format: "%@ free. Below ~15%% macOS slows down.",
+                           Format.bytes(free)),
             goTo: freePct > 15 ? nil : .smartScan))
 
         // Swap usage — heavy swap means real memory pressure.
@@ -73,11 +75,13 @@ enum SpeedService {
         let swapUsed = Int64(swap.xsu_used)
         checks.append(HealthCheck(
             id: "swap", icon: "memorychip",
-            title: "Memory pressure (swap in use)",
+            title: "Memory pressure",
             status: swapUsed < 1 << 30 ? .good : swapUsed < 4 << 30 ? .warn : .bad,
+            value: swapUsed == 0 ? "No swap" : Format.bytes(swapUsed),
             detail: swapUsed == 0
-                ? "No swap in use — plenty of RAM available."
-                : "\(Format.bytes(swapUsed)) swapped to disk. Quitting memory-hungry apps (below) or restarting helps."))
+                ? "Plenty of RAM available."
+                : "Swapped to disk. Quitting memory-hungry apps or restarting helps.",
+            goTo: swapUsed < 1 << 30 ? nil : .memoryWatch))
 
         // Startup items.
         let agents = StartupScanner.scan().filter { $0.scope == .userAgent && $0.enabled }
@@ -85,17 +89,19 @@ enum SpeedService {
             id: "startup", icon: "power",
             title: "Startup items",
             status: agents.count <= 5 ? .good : agents.count <= 12 ? .warn : .bad,
-            detail: "\(agents.count) launch agents start automatically. Fewer means faster login.",
+            value: "\(agents.count) agents",
+            detail: "Launch agents start automatically at login. Fewer means faster login.",
             goTo: agents.count <= 5 ? nil : .startupItems))
 
         // Uptime.
         let days = Int(ProcessInfo.processInfo.systemUptime / 86_400)
         checks.append(HealthCheck(
             id: "uptime", icon: "clock.arrow.circlepath",
-            title: "Time since last restart",
+            title: "Since last restart",
             status: days < 14 ? .good : days < 30 ? .warn : .bad,
-            detail: days == 0 ? "Restarted today."
-                : "\(days) day\(days == 1 ? "" : "s"). An occasional restart clears leaked memory and wedged processes."))
+            value: days == 0 ? "Today" : "\(days) day\(days == 1 ? "" : "s")",
+            detail: days < 14 ? "Recently restarted — all fresh."
+                : "An occasional restart clears leaked memory and wedged processes."))
 
         return checks
     }

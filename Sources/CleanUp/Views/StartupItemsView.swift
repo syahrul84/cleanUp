@@ -19,6 +19,10 @@ struct StartupItemsView: View {
                 ScanPlaceholder(scanning: scanning, emptyIcon: "power",
                                 emptyText: "Scan to list launch agents and daemons.")
             } else {
+                VStack(spacing: 0) {
+                StatBanner(icon: "power", tint: .teal,
+                           title: "\(items.count) startup item\(items.count == 1 ? "" : "s")",
+                           caption: "\(items.filter { $0.scope == .userAgent && $0.enabled }.count) active user agents — \(items.filter { $0.scope == .userAgent && !$0.enabled }.count) disabled")
                 List {
                     ForEach(grouped, id: \.scope) { group in
                         Section {
@@ -46,6 +50,7 @@ struct StartupItemsView: View {
                         Text("Apps that open at login are managed by macOS itself.")
                             .font(.caption).foregroundStyle(.tertiary)
                     }
+                }
                 }
             }
         }

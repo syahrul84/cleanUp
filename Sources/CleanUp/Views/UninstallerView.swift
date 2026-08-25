@@ -17,6 +17,12 @@ struct UninstallerView: View {
                 ScanPlaceholder(scanning: scanning, emptyIcon: "xmark.bin",
                                 emptyText: "Scan to list installed applications.")
             } else {
+                VStack(spacing: 0) {
+                StatBanner(icon: "xmark.bin", tint: .blue,
+                           title: "\(apps.count) applications",
+                           caption: apps.contains { $0.size != nil }
+                               ? "Using \(Format.bytes(apps.compactMap(\.size).reduce(0, +))) of disk"
+                               : "Calculating sizes…")
                 List(filtered) { app in
                     HStack {
                         Image(nsImage: app.icon)
@@ -33,6 +39,7 @@ struct UninstallerView: View {
                     .padding(.vertical, 2)
                 }
                 .searchable(text: $search, prompt: "Filter apps")
+                }
             }
         }
         .toolbar {

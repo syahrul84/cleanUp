@@ -18,6 +18,10 @@ struct JunkView: View {
                                 emptyText: hasScanned ? "No junk found — nice and clean!"
                                                       : "Scan to find caches, logs and other junk.")
             } else {
+                VStack(spacing: 0) {
+                StatBanner(icon: "sparkles", tint: .blue,
+                           title: "\(Format.bytes(categories.reduce(0) { $0 + $1.totalSize })) reclaimable",
+                           caption: "\(selectedItems.count) items selected — \(Format.bytes(selectedSize))")
                 List {
                     ForEach($categories) { $category in
                         Section {
@@ -38,6 +42,7 @@ struct JunkView: View {
                                 .font(.caption).foregroundStyle(.tertiary)
                         }
                     }
+                }
                 }
             }
         }

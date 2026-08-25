@@ -1,5 +1,71 @@
 import SwiftUI
 
+/// Compact dashboard card: colored title, big value, caption, optional action.
+struct StatCard: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    let value: String
+    let caption: String
+    var actionLabel: String?
+    var actionDisabled = false
+    var height: CGFloat = 112
+    var action: () -> Void = {}
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: icon)
+                .font(.caption.bold())
+                .foregroundStyle(tint)
+            Text(value)
+                .font(.title2.bold())
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(caption)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Spacer(minLength: 2)
+            if let actionLabel {
+                Button(actionLabel) { action() }
+                    .controlSize(.small)
+                    .disabled(actionDisabled)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: height)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// Full-width summary banner shown above a results list.
+struct StatBanner: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    let caption: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(tint)
+                .frame(width: 36, height: 36)
+                .background(tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 9))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.headline)
+                Text(caption).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+    }
+}
+
 /// Row with a checkbox, name, secondary label and size.
 struct RemovalRow: View {
     @Binding var item: RemovalItem
