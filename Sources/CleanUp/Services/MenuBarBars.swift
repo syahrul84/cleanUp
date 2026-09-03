@@ -39,10 +39,10 @@ enum MenuBarBars {
                 let x = Double(index) * (barWidth + gap)
                 let track = NSBezierPath(roundedRect: NSRect(x: x, y: 0, width: barWidth, height: height),
                                          xRadius: 2, yRadius: 2)
-                NSColor.gray.withAlphaComponent(0.35).setFill()
+                NSColor.gray.withAlphaComponent(0.45).setFill()
                 track.fill()
 
-                let fillHeight = max(2.5, height * min(max(fraction, 0), 1))
+                let fillHeight = max(3, height * min(max(fraction, 0), 1))
                 let fill = NSBezierPath(roundedRect: NSRect(x: x, y: 0, width: barWidth, height: fillHeight),
                                         xRadius: 2, yRadius: 2)
                 color.setFill()

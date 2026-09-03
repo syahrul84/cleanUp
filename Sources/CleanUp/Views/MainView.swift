@@ -10,6 +10,7 @@ enum Feature: String, CaseIterable, Identifiable {
     case largeFiles = "Large & Old Files"
     case leftovers = "Leftover Finder"
     case startupItems = "Startup Items"
+    case menuBarOrganizer = "Menu Bar"
     case homebrew = "Homebrew"
 
     var id: String { rawValue }
@@ -24,6 +25,7 @@ enum Feature: String, CaseIterable, Identifiable {
         case .largeFiles: return "externaldrive.badge.exclamationmark"
         case .leftovers: return "magnifyingglass"
         case .startupItems: return "power"
+        case .menuBarOrganizer: return "menubar.rectangle"
         case .homebrew: return "mug"
         }
     }
@@ -56,6 +58,7 @@ struct MainView: View {
             case .largeFiles: LargeFilesView()
             case .leftovers: LeftoversView()
             case .startupItems: StartupItemsView()
+            case .menuBarOrganizer: MenuBarOrganizerView()
             case .homebrew: HomebrewView()
             }
         }
