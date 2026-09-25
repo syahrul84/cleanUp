@@ -23,6 +23,7 @@ struct HealthCheck: Identifiable {
     let value: String          // short headline figure for the card
     let detail: String
     var goTo: Feature? = nil   // deep link to another tab that fixes it
+    var actionLabel = "Fix…"
 }
 
 struct ProcInfo: Identifiable {
@@ -68,20 +69,35 @@ enum SpeedService {
                            Format.bytes(free)),
             goTo: freePct > 15 ? nil : .smartScan))
 
-        // Swap usage — heavy swap means real memory pressure.
+        // Memory pressure: macOS's own verdict (kern.memorystatus_vm_pressure_level:
+        // 1 normal, 2 warning, 4 critical). Swap alone is misleading — macOS
+        // keeps swap files until restart, long after pressure has passed.
+        var level: Int32 = 0
+        var levelSize = MemoryLayout<Int32>.size
+        sysctlbyname("kern.memorystatus_vm_pressure_level", &level, &levelSize, nil, 0)
+        var memFreePct: Int32 = 0
+        var freeSize = MemoryLayout<Int32>.size
+        sysctlbyname("kern.memorystatus_level", &memFreePct, &freeSize, nil, 0)
         var swap = xsw_usage()
         var size = MemoryLayout<xsw_usage>.size
         sysctlbyname("vm.swapusage", &swap, &size, nil, 0)
         let swapUsed = Int64(swap.xsu_used)
+        let pressure: (HealthStatus, String) =
+            level >= 4 ? (.bad, "Critical") : level >= 2 ? (.warn, "Elevated") : (.good, "Normal")
+        var detail = "\(memFreePct)% of memory free."
+        if level >= 2 {
+            detail += " Quitting memory-hungry apps helps right away."
+        } else if swapUsed > 2 << 30 {
+            detail += " \(Format.bytes(swapUsed)) of old swap remains — a restart clears it."
+        }
         checks.append(HealthCheck(
-            id: "swap", icon: "memorychip",
+            id: "memory", icon: "memorychip",
             title: "Memory pressure",
-            status: swapUsed < 1 << 30 ? .good : swapUsed < 4 << 30 ? .warn : .bad,
-            value: swapUsed == 0 ? "No swap" : Format.bytes(swapUsed),
-            detail: swapUsed == 0
-                ? "Plenty of RAM available."
-                : "Swapped to disk. Quitting memory-hungry apps or restarting helps.",
-            goTo: swapUsed < 1 << 30 ? nil : .memoryWatch))
+            status: pressure.0,
+            value: pressure.1,
+            detail: detail,
+            goTo: level >= 2 ? .memoryWatch : nil,
+            actionLabel: "Find Heavy Apps…"))
 
         // Startup items.
         let agents = StartupScanner.scan().filter { $0.scope == .userAgent && $0.enabled }
@@ -227,6 +243,17 @@ enum SpeedService {
     /// Ask Spotlight to re-import a folder's contents (user-level, no admin).
     static func reindex(folder: URL) -> String? {
         let (status, output) = run("/usr/bin/mdimport", ["-i", folder.path])
+        return status == 0 ? nil : output
+    }
+
+    /// Simulators for OS versions no longer installed pile up silently.
+    /// `simctl delete unavailable` is Apple's own official cleanup for them.
+    static var hasSimulators: Bool {
+        FileUtils.exists(FileUtils.home.appendingPathComponent("Library/Developer/CoreSimulator/Devices"))
+    }
+
+    static func removeUnavailableSimulators() -> String? {
+        let (status, output) = run("/usr/bin/xcrun", ["simctl", "delete", "unavailable"])
         return status == 0 ? nil : output
     }
 

@@ -29,6 +29,13 @@ enum Feature: String, CaseIterable, Identifiable {
         case .homebrew: return "mug"
         }
     }
+
+    static let groups: [(title: String, features: [Feature])] = [
+        ("Overview", [.smartScan]),
+        ("Cleanup", [.junk, .largeFiles, .duplicates, .leftovers]),
+        ("Apps", [.uninstaller, .homebrew, .startupItems]),
+        ("Performance", [.speed, .memoryWatch, .menuBarOrganizer]),
+    ]
 }
 
 struct MainView: View {
@@ -37,8 +44,14 @@ struct MainView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(Feature.allCases, selection: $selection) { feature in
-                Label(feature.rawValue, systemImage: feature.systemImage).tag(feature)
+            List(selection: $selection) {
+                ForEach(Feature.groups, id: \.title) { group in
+                    Section(group.title) {
+                        ForEach(group.features) { feature in
+                            Label(feature.rawValue, systemImage: feature.systemImage).tag(feature)
+                        }
+                    }
+                }
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 220)
             .safeAreaInset(edge: .top) {

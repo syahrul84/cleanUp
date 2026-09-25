@@ -2,10 +2,35 @@ import Foundation
 
 enum JunkScanner {
 
-    static func scan() -> [JunkCategory] {
-        JunkCategoryKind.allCases.compactMap { kind in
+    /// Progress: the bar steps once per category; the status line names
+    /// each folder as it's measured. The reporter rides in thread-local
+    /// storage so every size lookup below can report without extra plumbing.
+    static func scan(progress: ScanProgressReporter? = nil,
+                     span: ClosedRange<Double> = 0...1) -> [JunkCategory] {
+        let kinds = JunkCategoryKind.allCases
+        let width = span.upperBound - span.lowerBound
+        var result: [JunkCategory] = []
+        for (index, kind) in kinds.enumerated() {
+            let start = span.lowerBound + width * Double(index) / Double(kinds.count)
+            progress?.report(start, "Checking \(kind.rawValue)…", force: true)
+            Thread.current.threadDictionary[progressKey] =
+                progress.map { MeasureContext(reporter: $0, fraction: start, category: kind.rawValue) }
             let items = items(for: kind)
-            return items.isEmpty ? nil : JunkCategory(kind: kind, items: items)
+            if !items.isEmpty { result.append(JunkCategory(kind: kind, items: items)) }
+        }
+        Thread.current.threadDictionary[progressKey] = nil
+        progress?.report(span.upperBound, "Finishing up…", force: true)
+        return result
+    }
+
+    private static let progressKey = "JunkScanner.progress"
+
+    private final class MeasureContext {
+        let reporter: ScanProgressReporter
+        let fraction: Double
+        let category: String
+        init(reporter: ScanProgressReporter, fraction: Double, category: String) {
+            self.reporter = reporter; self.fraction = fraction; self.category = category
         }
     }
 
@@ -33,10 +58,24 @@ enum JunkScanner {
             let candidates: [(URL, String)] = [
                 (dev.appendingPathComponent("Xcode/DerivedData"), "DerivedData"),
                 (dev.appendingPathComponent("Xcode/iOS DeviceSupport"), "iOS Device Support"),
+                (dev.appendingPathComponent("Xcode/watchOS DeviceSupport"), "watchOS Device Support"),
+                (dev.appendingPathComponent("Xcode/tvOS DeviceSupport"), "tvOS Device Support"),
+                (dev.appendingPathComponent("Xcode/iOS Device Logs"), "iOS Device Logs"),
+                (dev.appendingPathComponent("Xcode/UserData/Previews/Simulator Devices"), "SwiftUI Preview Caches"),
                 (dev.appendingPathComponent("CoreSimulator/Caches"), "Simulator Caches"),
+                (dev.appendingPathComponent("XCPGDevices"), "Playground Devices"),
+                (dev.appendingPathComponent("XCTestDevices"), "Test Devices"),
                 (lib.appendingPathComponent("Caches/com.apple.dt.Xcode"), "Xcode Cache"),
             ]
-            return existingItems(candidates)
+            var items = existingItems(candidates)
+            // Archives hold the user's release builds and dSYMs — shown for
+            // completeness, never pre-selected.
+            let archives = dev.appendingPathComponent("Xcode/Archives")
+            if FileUtils.exists(archives) {
+                let entry = item(archives, label: "Archives (your release builds!)", selected: false)
+                if entry.size > 0 { items.append(entry) }
+            }
+            return items.sorted { $0.size > $1.size }
 
         case .devCaches:
             let candidates: [(URL, String)] = [
@@ -47,6 +86,7 @@ enum JunkScanner {
                 (lib.appendingPathComponent("Caches/Yarn"), "Yarn cache"),
                 (home.appendingPathComponent(".gradle/caches"), "Gradle cache"),
                 (lib.appendingPathComponent("Caches/CocoaPods"), "CocoaPods cache"),
+                (lib.appendingPathComponent("Caches/org.swift.swiftpm"), "Swift Package cache"),
             ]
             return existingItems(candidates)
 
@@ -83,7 +123,14 @@ enum JunkScanner {
     }
 
     private static func item(_ url: URL, label: String, selected: Bool = true) -> RemovalItem {
-        RemovalItem(id: url.path, url: url, label: label,
-                    size: FileUtils.size(of: url), selected: selected)
+        if let context = Thread.current.threadDictionary[progressKey] as? MeasureContext {
+            context.reporter.report(context.fraction, "\(context.category): measuring \(label)…")
+        }
+        let context = Thread.current.threadDictionary[progressKey] as? MeasureContext
+        let size = FileUtils.size(of: url) { bytes, files in
+            context?.reporter.report(context!.fraction,
+                "\(context!.category): measuring \(label) — \(Format.bytes(bytes)) so far (\(files.formatted()) files)")
+        }
+        return RemovalItem(id: url.path, url: url, label: label, size: size, selected: selected)
     }
 }

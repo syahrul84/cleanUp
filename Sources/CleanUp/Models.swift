@@ -9,6 +9,7 @@ struct AppInfo: Identifiable, Hashable {
     let bundleID: String?
     let url: URL
     var size: Int64?          // computed lazily in background
+    var lastUsed: Date?       // from Spotlight metadata; nil = never/unknown
     let icon: NSImage
 
     static func == (lhs: AppInfo, rhs: AppInfo) -> Bool { lhs.id == rhs.id }
@@ -54,7 +55,7 @@ enum JunkCategoryKind: String, CaseIterable, Identifiable {
         switch self {
         case .userCaches: return "App caches in ~/Library/Caches. Apps rebuild these as needed."
         case .logs: return "Old log files in ~/Library/Logs."
-        case .xcode: return "DerivedData, module caches and simulator caches. Xcode regenerates them."
+        case .xcode: return "DerivedData, device support, SwiftUI preview and simulator caches — Xcode regenerates all of it. Archives (your release builds) are never pre-selected."
         case .devCaches: return "npm, pip, Homebrew and similar package-manager caches."
         case .browserCaches: return "Chrome, Firefox and other browser caches. You stay logged in."
         case .iosBackups: return "Local iPhone/iPad backups. Only remove if backed up elsewhere!"

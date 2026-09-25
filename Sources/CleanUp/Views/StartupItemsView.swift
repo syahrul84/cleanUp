@@ -5,59 +5,38 @@ struct StartupItemsView: View {
     @State private var scanning = false
     @State private var errorMessage: String?
 
-    private var grouped: [(scope: StartupItem.Scope, items: [StartupItem])] {
-        let scopes: [StartupItem.Scope] = [.userAgent, .systemAgent, .systemDaemon]
-        return scopes.compactMap { scope in
-            let scoped = items.filter { $0.scope == scope }
-            return scoped.isEmpty ? nil : (scope, scoped)
-        }
+    private func items(in scope: StartupItem.Scope) -> [StartupItem] {
+        items.filter { $0.scope == scope }
     }
+
+    private var activeUserAgents: Int { items.filter { $0.scope == .userAgent && $0.enabled }.count }
+    private var disabledUserAgents: Int { items.filter { $0.scope == .userAgent && !$0.enabled }.count }
 
     var body: some View {
         Group {
             if items.isEmpty {
-                ScanPlaceholder(scanning: scanning, emptyIcon: "power",
-                                emptyText: "Scan to list launch agents and daemons.")
+                ScanHero(icon: "power",
+                         title: "Startup Items",
+                         description: "Shows everything that launches automatically when you log in or start your Mac, and lets you switch off your own launch agents.",
+                         buttonTitle: "Find Startup Items",
+                         scanning: scanning,
+                         progressText: "Reading launch agents and daemons…") { scan() }
             } else {
-                VStack(spacing: 0) {
-                StatBanner(icon: "power", tint: .teal,
-                           title: "\(items.count) startup item\(items.count == 1 ? "" : "s")",
-                           caption: "\(items.filter { $0.scope == .userAgent && $0.enabled }.count) active user agents — \(items.filter { $0.scope == .userAgent && !$0.enabled }.count) disabled")
-                List {
-                    ForEach(grouped, id: \.scope) { group in
-                        Section {
-                            ForEach(group.items) { item in
-                                row(item)
-                            }
-                        } header: {
-                            Text(group.scope.rawValue)
-                        } footer: {
-                            if group.scope == .userAgent {
-                                Text("Toggling off moves the item to “LaunchAgents (Disabled)” and unloads it — fully reversible.")
-                                    .font(.caption).foregroundStyle(.tertiary)
-                            } else {
-                                Text("System-level items need admin rights — shown for information. Right-click to reveal in Finder.")
-                                    .font(.caption).foregroundStyle(.tertiary)
-                            }
-                        }
+                ScrollView {
+                    VStack(spacing: 14) {
+                        summary
+                        scopeCard(.userAgent,
+                                  title: "Your Launch Agents", icon: "person.crop.circle", tint: .teal,
+                                  info: "Background helpers installed for your account. Switching one off unloads it and moves its file to “LaunchAgents (Disabled)” — switch it back on anytime.")
+                        scopeCard(.systemAgent,
+                                  title: "System-wide Launch Agents", icon: "person.2.circle", tint: .blue,
+                                  info: "Helpers that run for every user. Changing these needs admin rights, so they're shown for information. Right-click any item to reveal it in Finder.")
+                        scopeCard(.systemDaemon,
+                                  title: "Launch Daemons", icon: "gearshape.2", tint: .indigo,
+                                  info: "System services that start before anyone logs in. Changing these needs admin rights, so they're shown for information. Right-click any item to reveal it in Finder.")
                     }
-                    Section {
-                        Button("Manage Login Items in System Settings…") {
-                            NSWorkspace.shared.open(URL(string:
-                                "x-apple.systempreferences:com.apple.LoginItems-Settings.extension")!)
-                        }
-                    } footer: {
-                        Text("Apps that open at login are managed by macOS itself.")
-                            .font(.caption).foregroundStyle(.tertiary)
-                    }
+                    .padding(16)
                 }
-                }
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(scanning ? "Scanning…" : "Scan", systemImage: "arrow.clockwise") { scan() }
-                    .disabled(scanning)
             }
         }
         .alert("Startup item error", isPresented: .init(
@@ -71,15 +50,60 @@ struct StartupItemsView: View {
         .onAppear { if items.isEmpty && !scanning { scan() } }
     }
 
-    @ViewBuilder
-    private func row(_ item: StartupItem) -> some View {
-        HStack {
+    private var summary: some View {
+        HStack(spacing: 12) {
+            IconTile(systemName: "power", tint: .teal, size: 36)
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.label)
-                Text(item.program).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text("\(items.count) startup item\(items.count == 1 ? "" : "s")").font(.headline)
+                Text("\(activeUserAgents) active user agent\(activeUserAgents == 1 ? "" : "s") · \(disabledUserAgents) disabled")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            Button("Login Items…", systemImage: "arrow.up.forward.app") {
+                NSWorkspace.shared.open(URL(string:
+                    "x-apple.systempreferences:com.apple.LoginItems-Settings.extension")!)
+            }
+            .help("Apps that open at login are managed in System Settings")
+            Button("Refresh", systemImage: "arrow.clockwise") { scan() }
+                .disabled(scanning)
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    @ViewBuilder
+    private func scopeCard(_ scope: StartupItem.Scope, title: String, icon: String,
+                           tint: Color, info: String) -> some View {
+        let scoped = items(in: scope)
+        if !scoped.isEmpty {
+            SectionCard(title: "\(title) (\(scoped.count))", icon: icon, tint: tint, info: info) {
+                ForEach(scoped) { item in
+                    row(item)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func row(_ item: StartupItem) -> some View {
+        let appName = ProcessIcons.appName(containing: item.program)
+        HoverRow {
+            if let icon = ProcessIcons.appIcon(containing: item.program) {
+                Image(nsImage: icon).resizable().interpolation(.high).frame(width: 28, height: 28)
+            } else {
+                IconTile(systemName: "terminal", tint: .gray)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(appName ?? item.label).lineLimit(1)
+                Text(appName == nil ? (item.program as NSString).lastPathComponent : item.label)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            .help(item.program)
+            Spacer()
             if item.scope == .userAgent {
+                Text(item.enabled ? "On" : "Off")
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle("", isOn: Binding(
                     get: { item.enabled },
                     set: { _ in toggle(item) }
@@ -87,7 +111,12 @@ struct StartupItemsView: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
             } else {
-                Text("Requires admin").font(.caption).foregroundStyle(.tertiary)
+                Label("Admin", systemImage: "lock.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(.quaternary, in: Capsule())
+                    .help("Needs admin rights to change")
             }
         }
         .contextMenu {

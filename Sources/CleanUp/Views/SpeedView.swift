@@ -10,13 +10,35 @@ struct SpeedView: View {
     @State private var refreshTimer: Timer?
 
     var body: some View {
-        VStack(spacing: 0) {
-            healthGrid
-            List {
-                hogsSection
-                tweaksSection
-                maintenanceSection
+        ScrollView {
+            VStack(spacing: 14) {
+                healthGrid
+                HStack(alignment: .top, spacing: 14) {
+                    processCard(title: "Top CPU", icon: "cpu", tint: .blue,
+                                procs: topCPU,
+                                emptyText: "Nothing is using significant CPU.",
+                                value: { String(format: "%.0f%%", $0.cpuPercent) },
+                                fraction: { $0.cpuPercent / max(topCPU.first?.cpuPercent ?? 1, 1) })
+                    processCard(title: "Top Memory", icon: "memorychip", tint: .orange,
+                                procs: topMem,
+                                emptyText: "Reading memory usage…",
+                                value: { Format.bytes($0.memBytes) },
+                                fraction: { Double($0.memBytes) / Double(max(topMem.first?.memBytes ?? 1, 1)) })
+                }
+                if !sleepBlockers.isEmpty {
+                    HStack(spacing: 8) {
+                        IconTile(systemName: "moon.zzz", tint: .indigo, size: 24)
+                        Text("Preventing sleep: \(sleepBlockers.joined(separator: ", "))")
+                            .font(.callout).foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(10)
+                    .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+                }
+                tweaksCard
+                maintenanceCard
             }
+            .padding(16)
         }
         .navigationTitle("Speed")
         .alert("Speed", isPresented: .init(
@@ -53,47 +75,76 @@ struct SpeedView: View {
                                  title: check.title,
                                  value: check.value,
                                  caption: check.detail,
-                                 actionLabel: check.goTo != nil ? "Fix…" : nil,
+                                 actionLabel: check.goTo != nil ? check.actionLabel : nil,
                                  height: 118) {
                             if let target = check.goTo { AppState.shared.open(target) }
                         }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 6)
             }
         }
     }
 
-    private var hogsSection: some View {
-        Group {
-            Section("Top CPU right now") {
-                if topCPU.isEmpty {
-                    Text("Nothing is using significant CPU.").foregroundStyle(.secondary)
-                }
-                ForEach(topCPU) { proc in procRow(proc, value: String(format: "%.0f%%", proc.cpuPercent)) }
+    private func processCard(title: String, icon: String, tint: Color,
+                             procs: [ProcInfo], emptyText: String,
+                             value: @escaping (ProcInfo) -> String,
+                             fraction: @escaping (ProcInfo) -> Double) -> some View {
+        SectionCard(title: title, icon: icon, tint: tint,
+                    info: "Live, refreshed every 3 seconds. Quit asks politely — an app with unsaved work can refuse.") {
+            if procs.isEmpty {
+                Text(emptyText).font(.callout).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
             }
-            Section {
-                ForEach(topMem) { proc in procRow(proc, value: Format.bytes(proc.memBytes)) }
-                if !sleepBlockers.isEmpty {
-                    Label("Preventing sleep: \(sleepBlockers.joined(separator: ", "))",
-                          systemImage: "moon.zzz")
-                        .font(.caption).foregroundStyle(.secondary)
+            ForEach(procs) { proc in
+                HoverRow {
+                    processIcon(proc)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(proc.name).lineLimit(1).truncationMode(.middle)
+                            Spacer()
+                            Text(value(proc)).font(.callout).monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        UsageBar(fraction: fraction(proc), tint: tint)
+                    }
+                    HoverIconButton(systemName: "xmark", help: "Quit \(proc.name)") {
+                        if let error = SpeedService.quit(proc) { message = error }
+                        refreshHogs()
+                    }
                 }
-            } header: {
-                Text("Top memory")
-            } footer: {
-                Text("Quit is polite — apps with unsaved work can refuse. Updates every 3 seconds.")
-                    .font(.caption).foregroundStyle(.tertiary)
             }
         }
     }
 
-    private var tweaksSection: some View {
-        Section {
+    @ViewBuilder
+    private func processIcon(_ proc: ProcInfo) -> some View {
+        if let icon = ProcessIcons.icon(for: proc.id) {
+            Image(nsImage: icon).resizable().interpolation(.high).frame(width: 24, height: 24)
+        } else {
+            IconTile(systemName: "gearshape", tint: .gray, size: 24)
+        }
+    }
+
+    private static let tweakIcons: [String: String] = [
+        "dock-delay": "dock.rectangle",
+        "mission-control": "rectangle.3.group",
+        "window-anim": "macwindow",
+        "resize-time": "arrow.up.left.and.arrow.down.right",
+    ]
+
+    private var tweaksCard: some View {
+        SectionCard(title: "Snappiness", icon: "hare", tint: .orange,
+                    info: "These shorten or skip interface animations — your Mac feels quicker because it stops making you wait. They don't add computing power, and every one is reversible.",
+                    accessory: AnyView(
+                        Button("Restore Defaults") {
+                            SpeedService.restoreAllTweaks()
+                            refreshTweaks()
+                        }
+                        .controlSize(.small))) {
             ForEach(SpeedService.tweaks) { tweak in
-                HStack {
+                HoverRow {
+                    IconTile(systemName: Self.tweakIcons[tweak.id] ?? "sparkles", tint: .orange)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(tweak.title)
                         Text(tweak.detail).font(.caption).foregroundStyle(.secondary)
@@ -108,37 +159,42 @@ struct SpeedView: View {
                     ))
                     .labelsHidden().toggleStyle(.switch)
                 }
-                .padding(.vertical, 2)
             }
-            Button("Restore macOS defaults") {
-                SpeedService.restoreAllTweaks()
-                refreshTweaks()
-            }
-        } header: {
-            Text("Snappiness")
-        } footer: {
-            Text("These shorten or skip interface animations — the Mac feels quicker because it stops making you wait. They do not add computing power. All reversible.")
-                .font(.caption).foregroundStyle(.tertiary)
         }
     }
 
-    private var maintenanceSection: some View {
-        Section {
-            maintenanceRow("Flush DNS cache", "Fixes many “internet is slow / site won’t load” issues. Asks for your admin password.") {
+    private var maintenanceCard: some View {
+        SectionCard(title: "Maintenance", icon: "wrench.and.screwdriver", tint: .teal) {
+            maintenanceRow("Flush DNS cache", "Fixes many “internet is slow / site won’t load” issues. Asks for your admin password.",
+                           icon: "network", tint: .blue) {
                 Task.detached {
                     let error = SpeedService.flushDNS()
                     await MainActor.run { message = error ?? "DNS cache flushed." }
                 }
             }
-            maintenanceRow("Restart Finder", "Fixes a laggy or frozen desktop and file windows.") {
+            maintenanceRow("Restart Finder", "Fixes a laggy or frozen desktop and file windows.",
+                           icon: "folder", tint: .cyan) {
                 SpeedService.restartFinder()
                 message = "Finder restarted."
             }
-            maintenanceRow("Restart Dock", "Fixes a stuck Dock, Mission Control or Stage Manager.") {
+            maintenanceRow("Restart Dock", "Fixes a stuck Dock, Mission Control or Stage Manager.",
+                           icon: "dock.rectangle", tint: .indigo) {
                 SpeedService.restartDock()
                 message = "Dock restarted."
             }
-            maintenanceRow("Re-index a folder in Spotlight…", "Re-imports a folder whose contents don’t show up in search.") {
+            if SpeedService.hasSimulators {
+                maintenanceRow("Remove unavailable simulators", "Deletes simulators for OS versions you no longer have — often several GB.",
+                               icon: "iphone", tint: .green) {
+                    Task.detached {
+                        let error = SpeedService.removeUnavailableSimulators()
+                        await MainActor.run {
+                            message = error ?? "Unavailable simulators removed."
+                        }
+                    }
+                }
+            }
+            maintenanceRow("Re-index a folder in Spotlight…", "Re-imports a folder whose contents don’t show up in search.",
+                           icon: "magnifyingglass", tint: .yellow) {
                 if let folder = FolderPicker.choose(prompt: "Re-index").first {
                     Task.detached {
                         let error = SpeedService.reindex(folder: folder)
@@ -148,43 +204,23 @@ struct SpeedView: View {
                     }
                 }
             }
-        } header: {
-            Text("Maintenance")
         }
     }
 
     // MARK: Pieces
 
-    @ViewBuilder
-    private func procRow(_ proc: ProcInfo, value: String) -> some View {
-        HStack {
-            if let icon = proc.icon {
-                Image(nsImage: icon).resizable().frame(width: 20, height: 20)
-            } else {
-                Image(systemName: "gearshape").frame(width: 20)
-            }
-            Text(proc.name).lineLimit(1)
-            Spacer()
-            Text(value).monospacedDigit().foregroundStyle(.secondary)
-            Button("Quit") {
-                if let error = SpeedService.quit(proc) { message = error }
-                refreshHogs()
-            }
-            .controlSize(.small)
-        }
-    }
-
     private func maintenanceRow(_ title: String, _ detail: String,
+                                icon: String, tint: Color,
                                 action: @escaping () -> Void) -> some View {
-        HStack {
+        HoverRow {
+            IconTile(systemName: icon, tint: tint)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                 Text(detail).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Run") { action() }
+            Button("Run", action: action)
         }
-        .padding(.vertical, 2)
     }
 
     // MARK: Data

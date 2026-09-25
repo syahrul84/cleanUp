@@ -36,8 +36,32 @@ enum AppScanner {
                        url: url, size: nil, icon: icon)
     }
 
-    /// All bundle IDs of installed apps, lowercased — used by the leftover/orphan scanner.
+    /// Bundle IDs of installed apps AND the helpers shipped inside them
+    /// (XPC services, login items, helper apps, extensions) — their data
+    /// folders are named after the helper, not the app, and must never be
+    /// mistaken for leftovers.
     static func installedBundleIDs(_ apps: [AppInfo]) -> Set<String> {
-        Set(apps.compactMap { $0.bundleID?.lowercased() })
+        var ids = Set(apps.compactMap { $0.bundleID?.lowercased() })
+        for systemApp in FileUtils.children(of: URL(fileURLWithPath: "/System/Applications"))
+            + FileUtils.children(of: URL(fileURLWithPath: "/System/Applications/Utilities")) {
+            if let id = Bundle(url: systemApp)?.bundleIdentifier?.lowercased() { ids.insert(id) }
+        }
+        let nestedDirs = ["Contents/XPCServices", "Contents/Library/LoginItems",
+                          "Contents/Helpers", "Contents/PlugIns", "Contents/Library/LaunchServices",
+                          "Contents/Frameworks"]
+        for app in apps {
+            for dir in nestedDirs {
+                for bundle in FileUtils.children(of: app.url.appendingPathComponent(dir)) {
+                    if let id = Bundle(url: bundle)?.bundleIdentifier?.lowercased() {
+                        ids.insert(id)
+                    }
+                    // One level deeper: helper apps inside frameworks (Chrome, Electron).
+                    for inner in FileUtils.children(of: bundle.appendingPathComponent("Versions/Current/Helpers")) {
+                        if let id = Bundle(url: inner)?.bundleIdentifier?.lowercased() { ids.insert(id) }
+                    }
+                }
+            }
+        }
+        return ids
     }
 }

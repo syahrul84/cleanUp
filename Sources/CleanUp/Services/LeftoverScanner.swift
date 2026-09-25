@@ -57,26 +57,69 @@ enum LeftoverScanner {
     }
 
     /// Reverse-DNS-looking entries in ~/Library that belong to no installed app → orphans.
-    static func orphans(installedBundleIDs: Set<String>) -> [RemovalItem] {
+    static func orphans(installedBundleIDs: Set<String>,
+                        progress: ScanProgressReporter? = nil,
+                        span: ClosedRange<Double> = 0...1) -> [RemovalItem] {
         // Vendors whose files we never flag: Apple's own, and ambiguous shared data.
-        let protectedPrefixes = ["com.apple.", "group.com.apple."]
+        let protectedPrefixes = ["com.apple.", "group.com.apple.", "groups.com.apple.",
+                                 "systemgroup.com.apple.", "is.workflow."]  // Shortcuts' legacy ID
+        // Vendors (first two ID components) of everything installed.
+        let installedVendors = Set(installedBundleIDs.map {
+            $0.split(separator: ".").prefix(2).joined(separator: ".")
+        })
         var items: [RemovalItem] = []
+        let existing = locations.filter { FileUtils.exists($0.url) }
+        let width = span.upperBound - span.lowerBound
 
-        for loc in locations where FileUtils.exists(loc.url) {
-            for child in FileUtils.children(of: loc.url, includeHidden: true) {
+        for (locIndex, loc) in existing.enumerated() {
+            let children = FileUtils.children(of: loc.url, includeHidden: true)
+            for (childIndex, child) in children.enumerated() {
+                let step = (Double(locIndex) + Double(childIndex) / Double(max(children.count, 1)))
+                    / Double(max(existing.count, 1))
+                progress?.report(span.lowerBound + width * step,
+                                 "Checking \(loc.label): \(child.lastPathComponent)")
                 var entry = child.lastPathComponent.lowercased()
                 for ext in [".plist", ".savedstate"] where entry.hasSuffix(ext) {
                     entry = String(entry.dropLast(ext.count))
+                }
+                // Group containers are "<TEAMID>.vendor.name", "group.vendor.name"
+                // or both ("<TEAMID>.group.vendor.name") — strip those prefixes.
+                if let first = entry.split(separator: ".").first,
+                   first.count == 10, first.allSatisfy({ $0.isLetter || $0.isNumber }),
+                   first.contains(where: \.isNumber) {
+                    entry = String(entry.dropFirst(first.count + 1))
+                }
+                for prefix in ["group.", "groups."] where entry.hasPrefix(prefix) {
+                    entry = String(entry.dropFirst(prefix.count))
                 }
                 // Only consider reverse-DNS names (at least vendor.tld.name) so we never
                 // flag plain folders like "Firefox" whose ownership we can't prove.
                 let parts = entry.split(separator: ".")
                 guard parts.count >= 3 else { continue }
                 guard !protectedPrefixes.contains(where: { entry.hasPrefix($0) }) else { continue }
-                let owned = installedBundleIDs.contains { entry == $0 || entry.hasPrefix($0 + ".") }
+                var owned = installedBundleIDs.contains { entry == $0 || entry.hasPrefix($0 + ".") }
+                // Sparkle (the common updater framework) names its helpers'
+                // data "<host vendor>.sparkle-project.…" — owned if any
+                // installed app shares that vendor prefix.
+                if !owned, let range = entry.range(of: ".sparkle-project.") {
+                    let vendor = String(entry[..<range.lowerBound])
+                    owned = installedBundleIDs.contains { $0.hasPrefix(vendor + ".") }
+                }
+                // Same developer as something installed → treat as shared data
+                // (updaters, helpers, group containers). Deliberately cautious:
+                // missing a leftover beats flagging live data.
+                if !owned {
+                    let vendor = entry.split(separator: ".").prefix(2).joined(separator: ".")
+                    owned = installedVendors.contains(vendor)
+                }
                 guard !owned else { continue }
+                let fraction = span.lowerBound + width * step
+                progress?.report(fraction, "Measuring \(child.lastPathComponent)…", force: true)
+                let size = FileUtils.size(of: child) { bytes, files in
+                    progress?.report(fraction, "Measuring \(child.lastPathComponent) — \(Format.bytes(bytes)) so far (\(files.formatted()) files)")
+                }
                 items.append(RemovalItem(id: child.path, url: child, label: loc.label,
-                                         size: FileUtils.size(of: child), selected: false))
+                                         size: size, selected: false))
             }
         }
         return items.sorted { $0.size > $1.size }

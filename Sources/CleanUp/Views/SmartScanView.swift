@@ -18,6 +18,7 @@ struct SmartScanView: View {
     @State private var scanning = false
     @State private var hasScanned = false
     @State private var progressText = "Scanning…"
+    @State private var progress = 0.0
 
     private var includedItems: [RemovalItem] { rows.filter(\.included).flatMap(\.items) }
     private var includedSize: Int64 { includedItems.reduce(0) { $0 + $1.size } }
@@ -33,8 +34,16 @@ struct SmartScanView: View {
                     Text("Checks junk, app leftovers and Trash in one pass.\nNothing is removed without your confirmation.")
                         .multilineTextAlignment(.center).foregroundStyle(.secondary)
                     if scanning {
-                        ProgressView()
-                        Text(progressText).foregroundStyle(.secondary)
+                        VStack(spacing: 6) {
+                            UsageBar(fraction: progress, height: 6)
+                            HStack {
+                                Text(progressText).lineLimit(1).truncationMode(.middle)
+                                Spacer()
+                                Text("\(Int(progress * 100))%").monospacedDigit()
+                            }
+                            .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .frame(width: 380)
                     } else {
                         Button { scan() } label: {
                             Text(hasScanned ? "Scan Again" : "Start Smart Scan")
@@ -61,33 +70,30 @@ struct SmartScanView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 14)
 
-                List {
-                    ForEach($rows) { $row in
-                        HStack {
-                            Toggle("", isOn: $row.included).labelsHidden()
-                            Label {
+                ScrollView {
+                    SectionCard(title: "What was found", icon: "list.bullet.rectangle", tint: .accentColor,
+                                info: "Switch on the categories you want cleaned. Risky ones — iOS backups, the Trash and app leftovers — start switched off. Everything goes to the Trash, so it can be restored.") {
+                        ForEach($rows) { $row in
+                            HoverRow(highlight: .accentColor) {
+                                IconTile(systemName: row.icon, tint: .blue)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(row.name)
-                                    Text(row.detail).font(.caption).foregroundStyle(.secondary)
+                                    Text(row.detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                                 }
-                            } icon: {
-                                Image(systemName: row.icon)
+                                Spacer()
+                                Text(Format.bytes(row.size)).font(.callout).monospacedDigit()
+                                    .foregroundStyle(row.included ? .primary : .secondary)
+                                Toggle("", isOn: $row.included).labelsHidden().toggleStyle(.switch)
                             }
-                            Spacer()
-                            Text(Format.bytes(row.size)).monospacedDigit().foregroundStyle(.secondary)
                         }
-                        .padding(.vertical, 4)
                     }
+                    .padding(16)
                 }
-                .scrollContentBackground(.hidden)
 
-                HStack {
-                    Button("Scan Again") { scan() }.disabled(scanning)
-                    Spacer()
+                ResultsActionBar(rescanTitle: "Scan Again", scanning: scanning, rescan: scan) {
                     TrashActionButton(count: includedItems.count, size: includedSize,
                                       urls: { includedItems.map(\.url) }) { scan() }
                 }
-                .padding()
             }
         }
         .navigationTitle("Smart Scan")
@@ -100,11 +106,17 @@ struct SmartScanView: View {
         scanning = true
         rows = []
         progressText = "Scanning junk…"
+        progress = 0
+        let reporter = ScanProgressReporter { fraction, text in
+            progress = fraction
+            progressText = text
+        }
         Task.detached(priority: .userInitiated) {
-            let junk = JunkScanner.scan()
-            await MainActor.run { progressText = "Finding app leftovers…" }
+            let junk = JunkScanner.scan(progress: reporter, span: 0...0.7)
+            reporter.report(0.7, "Finding app leftovers…", force: true)
             let apps = AppScanner.installedApps()
-            let orphans = LeftoverScanner.orphans(installedBundleIDs: AppScanner.installedBundleIDs(apps))
+            let orphans = LeftoverScanner.orphans(installedBundleIDs: AppScanner.installedBundleIDs(apps),
+                                                  progress: reporter, span: 0.72...1)
 
             var result: [Row] = junk.map { category in
                 Row(id: category.kind.rawValue,

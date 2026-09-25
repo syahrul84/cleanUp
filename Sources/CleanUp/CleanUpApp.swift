@@ -106,7 +106,7 @@ struct MenuBarLabel: View {
             mem: barMemory ? stats.memFraction : nil,
             disk: barDisk ? disk.usedFraction : nil,
             tempCelsius: barTemp ? sensors.cpuTemperature : nil,
-            fanFraction: barFan ? sensors.fans.first?.fraction : nil) {
+            fanFraction: barFan ? sensors.fans.map(\.fraction).max() : nil) {
             Image(nsImage: bars)
         } else {
             Image(nsImage: CleanUpApp.menuBarIcon)
@@ -161,7 +161,7 @@ struct MenuBarContent: View {
                 statRow(icon: "fan",
                         title: sensors.fans.count > 1 ? "Fan \(fan.id + 1)" : "Fan",
                         value: fan.rpm < 1 ? "off" : String(format: "%.0f RPM", fan.rpm),
-                        fraction: fan.fraction ?? 0)
+                        fraction: fan.fraction)
             }
 
             Divider()
@@ -185,9 +185,20 @@ struct MenuBarContent: View {
                         Toggle("Memory", isOn: $barMemory)
                         Toggle("Disk", isOn: $barDisk)
                     }
-                    HStack(spacing: 10) {
-                        Toggle("Temperature", isOn: $barTemp)
-                        Toggle("Fan", isOn: $barFan)
+                    // Only offer bars for hardware this Mac really has.
+                    if sensors.hasTemperature == true || sensors.hasFans == true {
+                        HStack(spacing: 10) {
+                            if sensors.hasTemperature == true {
+                                Toggle("Temperature", isOn: $barTemp)
+                            }
+                            if sensors.hasFans == true {
+                                Toggle("Fan", isOn: $barFan)
+                            }
+                        }
+                    }
+                    if sensors.hasFans == false {
+                        Text("This Mac has no fan — it's cooled silently.")
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .toggleStyle(.checkbox)
@@ -196,7 +207,31 @@ struct MenuBarContent: View {
                 .padding(.leading, 12)
             }
             if let error = loginItem.lastError {
-                Text(error).font(.caption2).foregroundStyle(.red)
+                VStack(alignment: .leading, spacing: 6) {
+                    Label {
+                        Text(error)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    HStack {
+                        Button("Open Login Items Settings") { loginItem.openLoginItemsSettings() }
+                        Button("Dismiss") { loginItem.lastError = nil }
+                    }
+                    .controlSize(.small)
+                }
+                .padding(8)
+                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            } else if loginItem.needsApproval {
+                HStack {
+                    Text("Waiting for your approval in System Settings.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Open") { loginItem.openLoginItemsSettings() }
+                        .controlSize(.small)
+                }
             }
 
             Divider()
@@ -225,6 +260,7 @@ struct MenuBarContent: View {
         .frame(width: 280)
         .onAppear {
             disk.refresh()
+            loginItem.refresh()
             refreshProcesses()
             sensors.sample()
         }

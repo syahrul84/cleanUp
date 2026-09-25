@@ -154,7 +154,9 @@ struct FanReading: Identifiable {
     let id: Int
     let rpm: Double
     let maxRPM: Double?
-    var fraction: Double? { maxRPM.map { $0 > 0 ? rpm / $0 : 0 } }
+    /// Share of the fan's top speed. Some Macs don't report a maximum;
+    /// 6,000 RPM is a typical Mac fan ceiling, so the bar stays meaningful.
+    var fraction: Double { rpm / ((maxRPM ?? 0) > 0 ? maxRPM! : 6_000) }
 }
 
 /// CPU temperature and fan speeds, sampled on demand.
@@ -166,6 +168,12 @@ final class Sensors: ObservableObject {
 
     @Published var cpuTemperature: Double?
     @Published var fans: [FanReading] = []
+    /// What this Mac physically has, learned from the sensor chip (not the
+    /// model name — Intel MacBook Airs have a fan, Apple Silicon ones don't).
+    /// nil until the first reading; sticky once true, so a single failed
+    /// read never makes the option flicker away.
+    @Published private(set) var hasFans: Bool?
+    @Published private(set) var hasTemperature: Bool?
 
     private lazy var smc = SMCConnection()
     private lazy var hid = HIDTemperatureReader()
@@ -188,6 +196,8 @@ final class Sensors: ObservableObject {
             DispatchQueue.main.async {
                 self.cpuTemperature = temp
                 self.fans = fanList
+                if !fanList.isEmpty { self.hasFans = true } else if self.hasFans == nil { self.hasFans = false }
+                if temp != nil { self.hasTemperature = true } else if self.hasTemperature == nil { self.hasTemperature = false }
             }
         }
     }

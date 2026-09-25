@@ -5,31 +5,25 @@ import CryptoKit
 /// then confirm with a full-content SHA-256. Zero false positives.
 enum DuplicateScanner {
 
-    static func scan(roots: [URL], progress: @escaping (String) -> Void) -> [DuplicateGroup] {
-        progress("Listing files…")
+    /// Progress: listing files fills the first 40% of the bar, comparing
+    /// candidates (weighted by how many files each size group holds) the rest.
+    static func scan(roots: [URL], progress: ScanProgressReporter? = nil) -> [DuplicateGroup] {
         var bySize: [Int64: [URL]] = [:]
-        let keys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey, .isPackageKey]
-
-        for root in roots {
-            guard let enumerator = FileManager.default.enumerator(
-                at: root, includingPropertiesForKeys: Array(keys),
-                options: [.skipsHiddenFiles, .skipsPackageDescendants],
-                errorHandler: { _, _ in true }) else { continue }
-            for case let url as URL in enumerator {
-                guard let values = try? url.resourceValues(forKeys: keys),
-                      values.isRegularFile == true, values.isPackage != true,
-                      let size = values.fileSize, size > 0 else { continue }
-                bySize[Int64(size), default: []].append(url)
-            }
+        FileWalker.walk(roots: roots, keys: [.fileSizeKey], reporter: progress,
+                        span: 0...0.4, verb: "Listing") { url, values in
+            guard let size = values.fileSize, size > 0 else { return }
+            bySize[Int64(size), default: []].append(url)
         }
 
         let sizeGroups = bySize.filter { $0.value.count > 1 }
+        let totalCandidates = max(sizeGroups.values.reduce(0) { $0 + $1.count }, 1)
         var groups: [DuplicateGroup] = []
-        var done = 0
+        var compared = 0
 
         for (size, urls) in sizeGroups {
-            done += 1
-            progress("Comparing candidates… (\(done)/\(sizeGroups.count) groups)")
+            progress?.report(0.4 + 0.6 * Double(compared) / Double(totalCandidates),
+                             "Comparing \(compared.formatted()) of \(totalCandidates.formatted()) same-size files — \(urls.first?.lastPathComponent ?? "")")
+            compared += urls.count
 
             // Pass 1: hash of first 1 MB
             var byPartial: [String: [URL]] = [:]
@@ -58,6 +52,7 @@ enum DuplicateScanner {
                 }
             }
         }
+        progress?.report(1, "Finishing up…", force: true)
         return groups.sorted { $0.wastedSize > $1.wastedSize }
     }
 

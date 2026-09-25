@@ -4,17 +4,16 @@ set -e
 cd "$(dirname "$0")"
 
 CONFIG=${1:-release}
-# Universal binary: build each arch separately (works with Command Line
-# Tools alone; --arch x2 would need full Xcode), then merge with lipo.
-swift build -c "$CONFIG" --triple arm64-apple-macosx
-swift build -c "$CONFIG" --triple x86_64-apple-macosx
-mkdir -p ".build/universal-$CONFIG"
-lipo -create \
-    ".build/arm64-apple-macosx/$CONFIG/CleanUp" \
-    ".build/x86_64-apple-macosx/$CONFIG/CleanUp" \
-    -output ".build/universal-$CONFIG/CleanUp"
+# Universal binary in one shot (requires full Xcode, installed 2026-09).
+swift build -c "$CONFIG" --arch arm64 --arch x86_64
 
-BIN=".build/universal-$CONFIG/CleanUp"
+# Product path differs between SwiftPM releases — take whichever exists.
+BIN=""
+for candidate in ".build/out/Products/${(C)CONFIG}/CleanUp" \
+                 ".build/apple/Products/${(C)CONFIG}/CleanUp"; do
+    [ -f "$candidate" ] && BIN="$candidate" && break
+done
+[ -n "$BIN" ] || { echo "error: built product not found"; exit 1; }
 APP="dist/CleanUp.app"
 
 rm -rf "$APP"
@@ -35,7 +34,7 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
     <key>CFBundleName</key><string>CleanUp</string>
     <key>CFBundleDisplayName</key><string>CleanUp</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.10</string>
+    <key>CFBundleShortVersionString</key><string>1.11</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
@@ -45,8 +44,19 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 </plist>
 EOF
 
-# Ad-hoc sign so macOS treats the bundle as a stable identity for
-# permission grants like Full Disk Access.
-codesign --force --deep -s - "$APP"
+# Sign with a real certificate when one exists (create a free "Apple
+# Development" cert in Xcode > Settings > Accounts) so TCC permission
+# grants like Full Disk Access survive updates; ad-hoc otherwise.
+# PUBLIC=1 (public release zips) never uses an Apple Development cert: its
+# signature embeds the developer's email, readable by anyone.
+if [ "${PUBLIC:-0}" = "1" ]; then
+    PATTERN='Developer ID Application'
+else
+    PATTERN='Developer ID Application|Apple Development'
+fi
+IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+    | awk -F'"' -v pat="$PATTERN" '$0 ~ pat {print $2; exit}')
+codesign --force --deep -s "${IDENTITY:--}" "$APP"
+echo "Signed with: ${IDENTITY:-ad-hoc signature (permissions reset on each update)}"
 
 echo "Built $APP"
