@@ -211,8 +211,7 @@ final class HomebrewService: ObservableObject {
                 .compactMap { $0 as? String }
                 .first { $0.hasSuffix(".app") }
             guard let appName,
-                  let bundle = Bundle(url: URL(fileURLWithPath: "/Applications/\(appName)")),
-                  let actual = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+                  let actual = installedVersion(ofAppAt: "/Applications/\(appName)")
             else { continue }
             let latest = String(latestFull.split(separator: ",").first ?? Substring(latestFull))
             guard let actualNum = numericVersion(actual), let latestNum = numericVersion(latest),
@@ -222,6 +221,17 @@ final class HomebrewService: ObservableObject {
                                        needsReinstall: recorded == latestFull))
         }
         return result
+    }
+
+    /// Version of the app on disk right now. Reads Info.plist directly —
+    /// `Bundle` objects are cached for the life of the process, so after an
+    /// update replaced the app they'd keep reporting the old version.
+    static func installedVersion(ofAppAt path: String) -> String? {
+        let plist = URL(fileURLWithPath: path).appendingPathComponent("Contents/Info.plist")
+        guard let data = try? Data(contentsOf: plist),
+              let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        else { return nil }
+        return info["CFBundleShortVersionString"] as? String
     }
 
     /// The first dotted number in a version label: "Build 4215" → "4215",
