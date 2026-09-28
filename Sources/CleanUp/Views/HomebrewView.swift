@@ -297,7 +297,17 @@ struct HomebrewView: View {
                 List(rows) { package in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(package.name)
+                            HStack(spacing: 6) {
+                                Text(package.name)
+                                if package.selfUpdating {
+                                    Label("Updates itself", systemImage: "arrow.triangle.2.circlepath")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.horizontal, 6).padding(.vertical, 1)
+                                        .background(.quaternary, in: Capsule())
+                                        .help("This app also updates itself. Opening it may install this update too — or update here to get it now through Homebrew.")
+                                }
+                            }
                             HStack(spacing: 4) {
                                 Text(package.installed).foregroundStyle(.secondary)
                                 Image(systemName: "arrow.right").font(.system(size: 8))

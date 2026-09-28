@@ -31,7 +31,20 @@ struct BrewOutdated: Identifiable {
     let installed: String
     let latest: String
     let isCask: Bool
+    /// App updates itself, so Homebrew's own "outdated" check hides it and
+    /// its recorded version can drift from what's really installed.
+    var selfUpdating = false
+    /// Homebrew already records the newest version even though the app on
+    /// disk is older, so `upgrade` would do nothing — reinstall instead.
+    var needsReinstall = false
     var id: String { (isCask ? "cask:" : "formula:") + name }
+
+    /// brew arguments that actually bring this package up to date.
+    var updateCommand: [String] {
+        guard isCask else { return ["upgrade", name] }
+        if needsReinstall { return ["reinstall", "--cask", name] }
+        return selfUpdating ? ["upgrade", "--cask", "--greedy", name] : ["upgrade", "--cask", name]
+    }
 }
 
 /// Maintenance-scoped Homebrew integration: everything shells out to the
@@ -113,7 +126,12 @@ final class HomebrewService: ObservableObject {
 
             // Outdated packages.
             let outdatedJSON = runQuiet(brew, ["outdated", "--json=v2"]).output
-            publish { self.outdated = Self.parseOutdated(outdatedJSON) }
+            var outdatedList = Self.parseOutdated(outdatedJSON)
+            let installedCaskJSON = runQuiet(brew, ["info", "--cask", "--installed", "--json=v2"]).output
+            let known = Set(outdatedList.map(\.id))
+            outdatedList += Self.selfUpdatingOutdated(installedCaskJSON).filter { !known.contains($0.id) }
+            let finalOutdated = outdatedList
+            publish { self.outdated = finalOutdated }
 
             // Manually-installed apps that Homebrew could adopt.
             let adoptableApps = computeAdoptable()
@@ -173,6 +191,58 @@ final class HomebrewService: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Self-updating casks that are really behind. Homebrew's own check
+    /// skips these (they "update themselves") and its recorded version
+    /// drifts once they do, so compare the version actually on disk —
+    /// read from the app bundle — against the cask's newest version.
+    private static func selfUpdatingOutdated(_ json: String) -> [BrewOutdated] {
+        guard let data = json.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let casks = root["casks"] as? [[String: Any]] else { return [] }
+        var result: [BrewOutdated] = []
+        for cask in casks where cask["auto_updates"] as? Bool == true {
+            guard let token = cask["token"] as? String,
+                  let latestFull = cask["version"] as? String, latestFull != "latest" else { continue }
+            let recorded = cask["installed"] as? String ?? ""
+            let appName = (cask["artifacts"] as? [[String: Any]] ?? [])
+                .flatMap { $0["app"] as? [Any] ?? [] }
+                .compactMap { $0 as? String }
+                .first { $0.hasSuffix(".app") }
+            guard let appName,
+                  let bundle = Bundle(url: URL(fileURLWithPath: "/Applications/\(appName)")),
+                  let actual = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            else { continue }
+            let latest = String(latestFull.split(separator: ",").first ?? Substring(latestFull))
+            guard let actualNum = numericVersion(actual), let latestNum = numericVersion(latest),
+                  compareVersions(actualNum, latestNum) == .orderedAscending else { continue }
+            result.append(BrewOutdated(name: token, installed: actualNum, latest: latestNum, isCask: true,
+                                       selfUpdating: true,
+                                       needsReinstall: recorded == latestFull))
+        }
+        return result
+    }
+
+    /// The first dotted number in a version label: "Build 4215" → "4215",
+    /// "3.24 R0004" → "3.24". nil when there's none.
+    static func numericVersion(_ label: String) -> String? {
+        guard let range = label.range(of: #"\d+(\.\d+)*"#, options: .regularExpression) else { return nil }
+        return String(label[range])
+    }
+
+    /// Numeric dotted-version comparison; nil when either side isn't
+    /// purely numeric (then we don't guess).
+    static func compareVersions(_ a: String, _ b: String) -> ComparisonResult? {
+        let pa = a.split(separator: ".").map { Int($0) }
+        let pb = b.split(separator: ".").map { Int($0) }
+        guard !pa.contains(nil), !pb.contains(nil), !pa.isEmpty, !pb.isEmpty else { return nil }
+        for i in 0..<max(pa.count, pb.count) {
+            let x = i < pa.count ? pa[i]! : 0
+            let y = i < pb.count ? pb[i]! : 0
+            if x != y { return x < y ? .orderedAscending : .orderedDescending }
+        }
+        return .orderedSame
     }
 
     private static func parseOutdated(_ json: String) -> [BrewOutdated] {
@@ -397,13 +467,14 @@ final class HomebrewService: ObservableObject {
     }
 
     func upgradeAll() {
-        runStreaming(["upgrade"], title: "Updating all packages…")
+        // Plain `brew upgrade` skips self-updating apps; follow it with the
+        // targeted command for each of those.
+        let extra = outdated.filter(\.selfUpdating).map(\.updateCommand)
+        runStreaming(steps: [["upgrade"]] + extra, title: "Updating all packages…")
     }
 
     func upgrade(_ package: BrewOutdated) {
-        runStreaming(package.isCask ? ["upgrade", "--cask", package.name]
-                                    : ["upgrade", package.name],
-                     title: "Updating \(package.name)…")
+        runStreaming(package.updateCommand, title: "Updating \(package.name)…")
     }
 
     func uninstall(_ package: BrewPackage) {
@@ -413,11 +484,47 @@ final class HomebrewService: ObservableObject {
     }
 
     private func runStreaming(_ args: [String], title: String) {
-        guard let brew = brewPath, busyTitle == nil else { return }
+        runStreaming(steps: [args], title: title)
+    }
+
+    /// Runs brew commands one after another, streaming output into the log;
+    /// stops at the first one that fails.
+    private func runStreaming(steps: [[String]], title: String) {
+        guard let brew = brewPath, busyTitle == nil, !steps.isEmpty else { return }
         busyTitle = title
-        log = "$ brew \(args.joined(separator: " "))\n"
+        log = ""
 
         queue.async { [self] in
+            var status: Int32 = 0
+            var failedArgs = steps[0]
+            for args in steps {
+                publish { self.log += "$ brew \(args.joined(separator: " "))\n" }
+                status = runLogged(brew, args)
+                if status != 0 { failedArgs = args; break }
+            }
+            let args = failedArgs
+            publish {
+                self.log += status == 0 ? "\n✓ Done\n" : "\n✗ brew exited with status \(status)\n"
+                self.busyTitle = nil
+                // Some casks run sudo (e.g. ownership fixes), which can only
+                // prompt for a password in a real terminal.
+                if status != 0, self.log.contains("sudo: a password is required")
+                    || self.log.contains("terminal is required to read the password") {
+                    self.terminalFallback = "brew " + args.joined(separator: " ")
+                }
+                // Instant feedback: drop freshly-managed casks from Adoptable
+                // right away, even if a background scan is still running.
+                let tokens = self.installedTokens()
+                self.installedCaskTokens = tokens
+                self.adoptable.removeAll { tokens.contains($0.caskToken) }
+            }
+            // Full refresh (queued automatically if a scan is mid-flight).
+            publish { self.scan() }
+        }
+    }
+
+    /// One brew command with output streamed into the log; returns its exit status.
+    private func runLogged(_ brew: String, _ args: [String]) -> Int32 {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: brew)
             process.arguments = args
@@ -440,27 +547,11 @@ final class HomebrewService: ObservableObject {
                 process.waitUntilExit()
             } catch {
                 publish { self.log += "\nFailed to run brew: \(error.localizedDescription)\n" }
+                pipe.fileHandleForReading.readabilityHandler = nil
+                return -1
             }
             pipe.fileHandleForReading.readabilityHandler = nil
-            let status = process.terminationStatus
-            publish {
-                self.log += status == 0 ? "\n✓ Done\n" : "\n✗ brew exited with status \(status)\n"
-                self.busyTitle = nil
-                // Some casks run sudo (e.g. ownership fixes), which can only
-                // prompt for a password in a real terminal.
-                if status != 0, self.log.contains("sudo: a password is required")
-                    || self.log.contains("terminal is required to read the password") {
-                    self.terminalFallback = "brew " + args.joined(separator: " ")
-                }
-                // Instant feedback: drop freshly-managed casks from Adoptable
-                // right away, even if a background scan is still running.
-                let tokens = self.installedTokens()
-                self.installedCaskTokens = tokens
-                self.adoptable.removeAll { tokens.contains($0.caskToken) }
-            }
-            // Full refresh (queued automatically if a scan is mid-flight).
-            publish { self.scan() }
-        }
+            return process.terminationStatus
     }
 
     // MARK: - Helpers
