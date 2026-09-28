@@ -105,7 +105,7 @@ struct MenuBarLabel: View {
             cpu: barCPU ? stats.cpuPercent / 100 : nil,
             mem: barMemory ? stats.memFraction : nil,
             disk: barDisk ? disk.usedFraction : nil,
-            tempCelsius: barTemp ? sensors.cpuTemperature : nil,
+            tempCelsius: barTemp ? max(sensors.cpuTemperature ?? 0, sensors.thermalState.fraction * 100) : nil,
             fanFraction: barFan ? sensors.fans.map(\.fraction).max() : nil) {
             Image(nsImage: bars)
         } else {
@@ -153,8 +153,14 @@ struct MenuBarContent: View {
 
             if let temp = sensors.cpuTemperature {
                 statRow(icon: "thermometer.medium", title: "CPU temp",
-                        value: String(format: "%.0f°C", temp),
-                        fraction: temp / 100)
+                        value: String(format: "%.0f°C · ", temp) + sensors.thermalState.label,
+                        fraction: max(temp / 100, sensors.thermalState.fraction))
+            } else {
+                // No readable sensor (VMs, some Macs): macOS's official
+                // thermal state still says whether the Mac is running hot.
+                statRow(icon: "thermometer.medium", title: "Thermal state",
+                        value: sensors.thermalState.label,
+                        fraction: sensors.thermalState.fraction)
             }
 
             ForEach(sensors.fans) { fan in
@@ -186,14 +192,11 @@ struct MenuBarContent: View {
                         Toggle("Disk", isOn: $barDisk)
                     }
                     // Only offer bars for hardware this Mac really has.
-                    if sensors.hasTemperature == true || sensors.hasFans == true {
-                        HStack(spacing: 10) {
-                            if sensors.hasTemperature == true {
-                                Toggle("Temperature", isOn: $barTemp)
-                            }
-                            if sensors.hasFans == true {
-                                Toggle("Fan", isOn: $barFan)
-                            }
+                    HStack(spacing: 10) {
+                        Toggle(sensors.hasTemperature == false ? "Thermal state" : "Temperature",
+                               isOn: $barTemp)
+                        if sensors.hasFans == true {
+                            Toggle("Fan", isOn: $barFan)
                         }
                     }
                     if sensors.hasFans == false {

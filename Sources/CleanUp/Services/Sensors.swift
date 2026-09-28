@@ -174,6 +174,10 @@ final class Sensors: ObservableObject {
     /// read never makes the option flicker away.
     @Published private(set) var hasFans: Bool?
     @Published private(set) var hasTemperature: Bool?
+    /// macOS's official thermal verdict (the one it uses to decide when to
+    /// throttle). Coarse but always available, on every Mac.
+    @Published private(set) var thermalState = ProcessInfo.processInfo.thermalState
+    private var thermalObserver: NSObjectProtocol?
 
     private lazy var smc = SMCConnection()
     private lazy var hid = HIDTemperatureReader()
@@ -182,6 +186,13 @@ final class Sensors: ObservableObject {
 
     /// Continuous sampling so the menu bar label can show live sensor bars.
     func start() {
+        if thermalObserver == nil {
+            thermalObserver = NotificationCenter.default.addObserver(
+                forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                self?.thermalState = ProcessInfo.processInfo.thermalState
+            }
+        }
         guard timer == nil else { return }
         sample()
         timer = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in
@@ -225,6 +236,29 @@ final class Sensors: ObservableObject {
         return (0..<Int(count)).compactMap { i in
             guard let rpm = smc.readNumber("F\(i)Ac") else { return nil }
             return FanReading(id: i, rpm: rpm, maxRPM: smc.readNumber("F\(i)Mx"))
+        }
+    }
+}
+
+extension ProcessInfo.ThermalState {
+    var label: String {
+        switch self {
+        case .nominal: return "Normal"
+        case .fair: return "Warm"
+        case .serious: return "Hot — slowing down"
+        case .critical: return "Critical — slowing down"
+        @unknown default: return "Unknown"
+        }
+    }
+
+    /// Position on a 0…1 bar (drives the usual accent/orange/red colouring).
+    var fraction: Double {
+        switch self {
+        case .nominal: return 0.25
+        case .fair: return 0.65
+        case .serious: return 0.8
+        case .critical: return 1.0
+        @unknown default: return 0
         }
     }
 }
