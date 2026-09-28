@@ -27,7 +27,7 @@ Native Swift + SwiftUI. Tiny footprint. Everything it removes goes to the **Tras
 - ⚡️ **Startup Items** — see launch agents and daemons; switch your own agents off and on again, fully reversibly.
 - 🫥 **Menu Bar organizer** — declutter your menu bar, Hidden Bar-style: ⌘-drag icons you rarely need to the left of CleanUp's separator, then hide and show them with one click on the chevron. Optional auto-hide timer and start-hidden setting. No extra permissions needed.
 - 🍺 **Homebrew** — reclaim brew's cached downloads, remove orphaned dependencies, update outdated apps and CLI tools (with live output), and uninstall packages with their sizes. **Adopt** apps you installed by hand so Homebrew keeps them updated, and **Discover** popular apps to install the maintainable way. Hides itself if Homebrew isn't installed.
-- 📊 **Menu bar widget** — live CPU, memory, disk, **CPU temperature and fan speed**, plus the top CPU- and memory-hungry processes, launch-at-login toggle, one-click Smart Scan. Optional live usage bars as the menu bar icon (green = low, blue = normal, red = high) — only for sensors your Mac actually has, so fanless Macs never show a fan.
+- 📊 **Menu bar widget** — live CPU, memory, disk, **CPU temperature (with macOS's official thermal state) and fan speed**, plus the top CPU- and memory-hungry processes, launch-at-login toggle, one-click Smart Scan. Optional live usage bars as the menu bar icon (green = low, blue = normal, red = high) — only for sensors your Mac actually has, so fanless Macs never show a fan.
 
 ## What CleanUp will never do
 
