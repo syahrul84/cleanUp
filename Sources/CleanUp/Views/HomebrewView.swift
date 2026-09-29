@@ -76,6 +76,14 @@ struct HomebrewView: View {
         } message: {
             Text("Removed via Homebrew (not the Trash). You can reinstall anytime with brew install.")
         }
+        .alert("Quit apps to update?", isPresented: .init(
+            get: { brew.quitRequest != nil },
+            set: { if !$0 { brew.quitRequest = nil } })) {
+            Button("Quit & Update") { brew.confirmQuitAndUpdate() }
+            Button("Cancel", role: .cancel) { brew.quitRequest = nil }
+        } message: {
+            Text("\(brew.quitRequest?.names ?? "") is open. CleanUp will quit it, install the update, then reopen it. Save your work first — an app with unsaved changes may refuse to quit.")
+        }
         .alert("Admin password needed", isPresented: .init(
             get: { brew.terminalFallback != nil },
             set: { if !$0 { brew.terminalFallback = nil } })) {

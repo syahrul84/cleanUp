@@ -67,6 +67,16 @@ final class HomebrewService: ObservableObject {
     @Published var busyTitle: String?          // non-nil while a brew action runs
     @Published var log = ""
     @Published var terminalFallback: String?   // brew command needing an admin password
+    /// Set when apps about to be updated are open; the view asks the user.
+    @Published var quitRequest: QuitRequest?
+
+    struct QuitRequest: Identifiable {
+        let id = UUID()
+        let apps: [NSRunningApplication]
+        let title: String
+        let steps: [[String]]
+        var names: String { apps.compactMap(\.localizedName).joined(separator: ", ") }
+    }
 
     private let queue = DispatchQueue(label: "homebrew", qos: .userInitiated)
     private var rescanQueued = false // main-thread only
@@ -215,7 +225,7 @@ final class HomebrewService: ObservableObject {
             else { continue }
             let latest = String(latestFull.split(separator: ",").first ?? Substring(latestFull))
             guard let actualNum = numericVersion(actual), let latestNum = numericVersion(latest),
-                  compareVersions(actualNum, latestNum) == .orderedAscending else { continue }
+                  isBehind(actualNum, latestNum) else { continue }
             result.append(BrewOutdated(name: token, installed: actualNum, latest: latestNum, isCask: true,
                                        selfUpdating: true,
                                        needsReinstall: recorded == latestFull))
@@ -239,6 +249,17 @@ final class HomebrewService: ObservableObject {
     static func numericVersion(_ label: String) -> String? {
         guard let range = label.range(of: #"\d+(\.\d+)*"#, options: .regularExpression) else { return nil }
         return String(label[range])
+    }
+
+    /// Behind only if lower within the precision the app itself reports:
+    /// Android Studio labels itself "2026.1" while Homebrew says
+    /// "2026.1.4.8" — that's the same release, not an older one.
+    static func isBehind(_ actual: String, _ latest: String) -> Bool {
+        let a = actual.split(separator: ".")
+        let l = latest.split(separator: ".")
+        let common = min(a.count, l.count)
+        return compareVersions(a.prefix(common).joined(separator: "."),
+                               l.prefix(common).joined(separator: ".")) == .orderedAscending
     }
 
     /// Numeric dotted-version comparison; nil when either side isn't
@@ -480,11 +501,61 @@ final class HomebrewService: ObservableObject {
         // Plain `brew upgrade` skips self-updating apps; follow it with the
         // targeted command for each of those.
         let extra = outdated.filter(\.selfUpdating).map(\.updateCommand)
-        runStreaming(steps: [["upgrade"]] + extra, title: "Updating all packages…")
+        startUpdate(steps: [["upgrade"]] + extra, title: "Updating all packages…",
+                    casks: outdated.filter(\.isCask).map(\.name))
     }
 
     func upgrade(_ package: BrewOutdated) {
-        runStreaming(package.updateCommand, title: "Updating \(package.name)…")
+        startUpdate(steps: [package.updateCommand], title: "Updating \(package.name)…",
+                    casks: package.isCask ? [package.name] : [])
+    }
+
+    /// Updating an app while it's open can fail or leave it half-replaced,
+    /// so if any are running, ask the user to let CleanUp quit them first.
+    private func startUpdate(steps: [[String]], title: String, casks: [String]) {
+        let open = runningApps(forCasks: casks)
+        if open.isEmpty {
+            runStreaming(steps: steps, title: title)
+        } else {
+            quitRequest = QuitRequest(apps: open, title: title, steps: steps)
+        }
+    }
+
+    private func runningApps(forCasks tokens: [String]) -> [NSRunningApplication] {
+        let paths = Set(tokens.compactMap { tokenAppNameMemo?[$0] }.map { "/Applications/\($0)" })
+        return NSWorkspace.shared.runningApplications.filter {
+            guard let path = $0.bundleURL?.path else { return false }
+            return paths.contains(path)
+        }
+    }
+
+    /// Quit the open apps, wait for them to close, update, then reopen them.
+    func confirmQuitAndUpdate() {
+        guard let request = quitRequest else { return }
+        quitRequest = nil
+        let reopen = request.apps.compactMap(\.bundleURL)
+        busyTitle = "Quitting \(request.names)…"
+        log = ""
+        request.apps.forEach { $0.terminate() }
+        queue.async { [self] in
+            let deadline = Date().addingTimeInterval(20)
+            while Date() < deadline && request.apps.contains(where: { !$0.isTerminated }) {
+                Thread.sleep(forTimeInterval: 0.3)
+            }
+            let stillOpen = request.apps.filter { !$0.isTerminated }.compactMap(\.localizedName)
+            publish {
+                self.busyTitle = nil
+                if !stillOpen.isEmpty {
+                    self.log = "✗ \(stillOpen.joined(separator: ", ")) didn't quit — it may have unsaved work. Save and quit it, then try again.\n"
+                    return
+                }
+                self.runStreaming(steps: request.steps, title: request.title) {
+                    let config = NSWorkspace.OpenConfiguration()
+                    config.activates = false
+                    reopen.forEach { NSWorkspace.shared.openApplication(at: $0, configuration: config) }
+                }
+            }
+        }
     }
 
     func uninstall(_ package: BrewPackage) {
@@ -499,7 +570,7 @@ final class HomebrewService: ObservableObject {
 
     /// Runs brew commands one after another, streaming output into the log;
     /// stops at the first one that fails.
-    private func runStreaming(steps: [[String]], title: String) {
+    private func runStreaming(steps: [[String]], title: String, completion: (() -> Void)? = nil) {
         guard let brew = brewPath, busyTitle == nil, !steps.isEmpty else { return }
         busyTitle = title
         log = ""
@@ -529,7 +600,7 @@ final class HomebrewService: ObservableObject {
                 self.adoptable.removeAll { tokens.contains($0.caskToken) }
             }
             // Full refresh (queued automatically if a scan is mid-flight).
-            publish { self.scan() }
+            publish { completion?(); self.scan() }
         }
     }
 
