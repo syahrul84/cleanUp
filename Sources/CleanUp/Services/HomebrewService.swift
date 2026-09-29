@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import UserNotifications
 
 struct BrewPackage: Identifiable {
     let name: String
@@ -74,8 +75,26 @@ final class HomebrewService: ObservableObject {
         let id = UUID()
         let apps: [NSRunningApplication]
         let title: String
-        let steps: [[String]]
+        let otherSteps: [[String]]           // formulae + casks whose apps are closed
+        let caskCommands: [String: [String]] // token -> command, for the open apps
         var names: String { apps.compactMap(\.localizedName).joined(separator: ", ") }
+    }
+
+    /// An update whose download is ready but whose app wouldn't close.
+    /// Installed automatically as soon as the app quits, or at next launch.
+    struct PendingUpdate: Codable, Identifiable {
+        let token: String
+        let appPath: String
+        let appName: String
+        let command: [String]
+        var id: String { token }
+    }
+
+    @Published private(set) var pending: [PendingUpdate] = []
+    private var terminationObserver: NSObjectProtocol?
+
+    private var pendingFile: URL {
+        caskCacheURL.deletingLastPathComponent().appendingPathComponent("pending-updates.json")
     }
 
     private let queue = DispatchQueue(label: "homebrew", qos: .userInitiated)
@@ -490,7 +509,10 @@ final class HomebrewService: ObservableObject {
 
 
     func cleanUp() {
-        runStreaming(["cleanup", "--prune=all"], title: "Cleaning up…")
+        // --prune=all would also delete downloads that pending updates are
+        // waiting to install; plain cleanup keeps current-version downloads.
+        runStreaming(pending.isEmpty ? ["cleanup", "--prune=all"] : ["cleanup"],
+                     title: "Cleaning up…")
     }
 
     func removeOrphans() {
@@ -498,63 +520,166 @@ final class HomebrewService: ObservableObject {
     }
 
     func upgradeAll() {
-        // Plain `brew upgrade` skips self-updating apps; follow it with the
-        // targeted command for each of those.
-        let extra = outdated.filter(\.selfUpdating).map(\.updateCommand)
-        startUpdate(steps: [["upgrade"]] + extra, title: "Updating all packages…",
-                    casks: outdated.filter(\.isCask).map(\.name))
+        // Formulae in one go; each cask with its own command (plain `brew
+        // upgrade` skips self-updating apps), so an app that refuses to close
+        // only holds back its own update.
+        let formulae: [[String]] = outdated.contains { !$0.isCask } ? [["upgrade", "--formula"]] : []
+        let casks = Dictionary(outdated.filter(\.isCask).map { ($0.name, $0.updateCommand) },
+                               uniquingKeysWith: { a, _ in a })
+        startUpdate(formulaSteps: formulae, caskCommands: casks, title: "Updating all packages…")
     }
 
     func upgrade(_ package: BrewOutdated) {
-        startUpdate(steps: [package.updateCommand], title: "Updating \(package.name)…",
-                    casks: package.isCask ? [package.name] : [])
+        if package.isCask {
+            startUpdate(formulaSteps: [], caskCommands: [package.name: package.updateCommand],
+                        title: "Updating \(package.name)…")
+        } else {
+            startUpdate(formulaSteps: [package.updateCommand], caskCommands: [:],
+                        title: "Updating \(package.name)…")
+        }
     }
 
     /// Updating an app while it's open can fail or leave it half-replaced,
     /// so if any are running, ask the user to let CleanUp quit them first.
-    private func startUpdate(steps: [[String]], title: String, casks: [String]) {
-        let open = runningApps(forCasks: casks)
+    private func startUpdate(formulaSteps: [[String]], caskCommands: [String: [String]], title: String) {
+        let open = runningApps(forCasks: Array(caskCommands.keys))
+        let openTokens = Set(open.compactMap { token(for: $0) })
         if open.isEmpty {
-            runStreaming(steps: steps, title: title)
-        } else {
-            quitRequest = QuitRequest(apps: open, title: title, steps: steps)
+            runStreaming(steps: formulaSteps + caskCommands.values.sorted { $0.joined() < $1.joined() },
+                         title: title)
+            return
         }
+        let closedSteps = caskCommands.filter { !openTokens.contains($0.key) }.map(\.value)
+        quitRequest = QuitRequest(apps: open, title: title,
+                                  otherSteps: formulaSteps + closedSteps,
+                                  caskCommands: caskCommands.filter { openTokens.contains($0.key) })
+    }
+
+    private func appPath(forCask token: String) -> String? {
+        tokenAppNameMemo?[token].map { "/Applications/\($0)" }
+    }
+
+    private func token(for app: NSRunningApplication) -> String? {
+        guard let path = app.bundleURL?.path else { return nil }
+        return tokenAppNameMemo?.first { "/Applications/\($0.value)" == path }?.key
     }
 
     private func runningApps(forCasks tokens: [String]) -> [NSRunningApplication] {
-        let paths = Set(tokens.compactMap { tokenAppNameMemo?[$0] }.map { "/Applications/\($0)" })
+        let paths = Set(tokens.compactMap { appPath(forCask: $0) })
         return NSWorkspace.shared.runningApplications.filter {
             guard let path = $0.bundleURL?.path else { return false }
             return paths.contains(path)
         }
     }
 
-    /// Quit the open apps, wait for them to close, update, then reopen them.
+    /// Download first (safe while the app is open), then quit it, update and
+    /// reopen it. Apps that won't close keep their download and become
+    /// pending updates, finished automatically once they quit.
     func confirmQuitAndUpdate() {
-        guard let request = quitRequest else { return }
+        guard let request = quitRequest, let brew = brewPath else { return }
         quitRequest = nil
-        let reopen = request.apps.compactMap(\.bundleURL)
-        busyTitle = "Quitting \(request.names)…"
+        busyTitle = "Downloading updates…"
         log = ""
-        request.apps.forEach { $0.terminate() }
         queue.async { [self] in
+            for token in request.caskCommands.keys.sorted() {
+                publish { self.log += "$ brew fetch --cask \(token)\n" }
+                if runLogged(brew, ["fetch", "--cask", token]) != 0 {
+                    publish { self.log += "\n✗ Download failed — nothing was changed.\n"; self.busyTitle = nil }
+                    return
+                }
+            }
+            publish { self.busyTitle = "Quitting \(request.names)…"; self.log += "\nQuitting \(request.names)…\n" }
+            DispatchQueue.main.sync { request.apps.forEach { $0.terminate() } }
             let deadline = Date().addingTimeInterval(20)
             while Date() < deadline && request.apps.contains(where: { !$0.isTerminated }) {
                 Thread.sleep(forTimeInterval: 0.3)
             }
-            let stillOpen = request.apps.filter { !$0.isTerminated }.compactMap(\.localizedName)
+            let closed = request.apps.filter(\.isTerminated)
+            let stillOpen = request.apps.filter { !$0.isTerminated }
             publish {
                 self.busyTitle = nil
-                if !stillOpen.isEmpty {
-                    self.log = "✗ \(stillOpen.joined(separator: ", ")) didn't quit — it may have unsaved work. Save and quit it, then try again.\n"
-                    return
+                var steps = request.otherSteps
+                for app in closed {
+                    if let t = self.token(for: app), let cmd = request.caskCommands[t] { steps.append(cmd) }
                 }
-                self.runStreaming(steps: request.steps, title: request.title) {
+                for app in stillOpen {
+                    guard let t = self.token(for: app), let cmd = request.caskCommands[t],
+                          let path = app.bundleURL?.path else { continue }
+                    self.addPending(PendingUpdate(token: t, appPath: path,
+                                                  appName: app.localizedName ?? t, command: cmd))
+                    self.log += "\(app.localizedName ?? t) didn't quit (it may have unsaved work). Its update is downloaded and will install automatically as soon as it closes.\n"
+                }
+                let reopen = closed.compactMap(\.bundleURL)
+                guard !steps.isEmpty else { return }
+                self.runStreaming(steps: steps, title: request.title) { _ in
                     let config = NSWorkspace.OpenConfiguration()
                     config.activates = false
                     reopen.forEach { NSWorkspace.shared.openApplication(at: $0, configuration: config) }
                 }
             }
+        }
+    }
+
+    // MARK: - Pending updates
+
+    /// Called at launch: restore pending updates, install any whose app is
+    /// already closed, and watch for the rest to quit.
+    func startPendingWatcher() {
+        if let data = try? Data(contentsOf: pendingFile),
+           let saved = try? JSONDecoder().decode([PendingUpdate].self, from: data) {
+            pending = saved
+        }
+        if terminationObserver == nil {
+            terminationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
+            ) { [weak self] note in
+                guard let self,
+                      let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                      let path = app.bundleURL?.path,
+                      let item = self.pending.first(where: { $0.appPath == path }) else { return }
+                self.installPending(item)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self else { return }
+            let running = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleURL?.path })
+            self.pending.filter { !running.contains($0.appPath) }.forEach { self.installPending($0) }
+        }
+    }
+
+    func cancelPending(_ item: PendingUpdate) {
+        pending.removeAll { $0.id == item.id }
+        savePending()
+    }
+
+    private func addPending(_ item: PendingUpdate) {
+        pending.removeAll { $0.id == item.id }
+        pending.append(item)
+        savePending()
+    }
+
+    private func savePending() {
+        if let data = try? JSONEncoder().encode(pending) { try? data.write(to: pendingFile) }
+    }
+
+    private func installPending(_ item: PendingUpdate) {
+        guard brewPath != nil else { return }
+        // One brew at a time: try again shortly if something else is running.
+        guard busyTitle == nil else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                guard let self, self.pending.contains(where: { $0.id == item.id }) else { return }
+                self.installPending(item)
+            }
+            return
+        }
+        runStreaming(steps: [item.command], title: "Installing pending update: \(item.appName)…") { [weak self] ok in
+            guard let self, ok else { return }
+            self.cancelPending(item)
+            let content = UNMutableNotificationContent()
+            content.title = "\(item.appName) updated"
+            content.body = "CleanUp installed the update that was waiting for \(item.appName) to close."
+            UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: "update-\(item.token)", content: content, trigger: nil))
         }
     }
 
@@ -570,7 +695,7 @@ final class HomebrewService: ObservableObject {
 
     /// Runs brew commands one after another, streaming output into the log;
     /// stops at the first one that fails.
-    private func runStreaming(steps: [[String]], title: String, completion: (() -> Void)? = nil) {
+    private func runStreaming(steps: [[String]], title: String, completion: ((Bool) -> Void)? = nil) {
         guard let brew = brewPath, busyTitle == nil, !steps.isEmpty else { return }
         busyTitle = title
         log = ""
@@ -600,7 +725,7 @@ final class HomebrewService: ObservableObject {
                 self.adoptable.removeAll { tokens.contains($0.caskToken) }
             }
             // Full refresh (queued automatically if a scan is mid-flight).
-            publish { completion?(); self.scan() }
+            publish { completion?(status == 0); self.scan() }
         }
     }
 

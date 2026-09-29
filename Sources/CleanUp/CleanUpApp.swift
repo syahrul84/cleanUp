@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         DiskStatus.shared.startAutoRefresh()
         Sensors.shared.start()
         MenuBarOrganizer.shared.start()
+        HomebrewService.shared.startPendingWatcher()
 
         let event = NSAppleEventManager.shared().currentAppleEvent
         let launchedAtLogin = event?.eventID == kAEOpenApplication

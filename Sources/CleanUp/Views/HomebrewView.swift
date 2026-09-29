@@ -82,7 +82,7 @@ struct HomebrewView: View {
             Button("Quit & Update") { brew.confirmQuitAndUpdate() }
             Button("Cancel", role: .cancel) { brew.quitRequest = nil }
         } message: {
-            Text("\(brew.quitRequest?.names ?? "") is open. CleanUp will quit it, install the update, then reopen it. Save your work first — an app with unsaved changes may refuse to quit.")
+            Text("\(brew.quitRequest?.names ?? "") is open. CleanUp will download the update first, then quit the app, install it and reopen it. If it won't quit (for example unsaved work), the update waits and installs automatically when you close it.")
         }
         .alert("Admin password needed", isPresented: .init(
             get: { brew.terminalFallback != nil },
@@ -287,9 +287,36 @@ struct HomebrewView: View {
 
     // MARK: - Lists
 
+    private var pendingCard: some View {
+        SectionCard(title: "Waiting to install (\(brew.pending.count))", icon: "clock.arrow.circlepath", tint: .orange,
+                    info: "These updates are downloaded but their apps were open. Each one installs automatically as soon as you quit the app — or when CleanUp starts after a restart.") {
+            ForEach(brew.pending) { item in
+                HoverRow {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: item.appPath))
+                        .resizable().frame(width: 24, height: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.appName)
+                        Text("Installs when \(item.appName) closes").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Cancel") { brew.cancelPending(item) }.controlSize(.small)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+    }
+
     private var updatesList: some View {
         let rows = brew.outdated.filter { $0.isCask == (packageKind == .apps) }
-        return Group {
+        return VStack(spacing: 0) {
+            if !brew.pending.isEmpty { pendingCard }
+            updatesListBody(rows)
+        }
+    }
+
+    private func updatesListBody(_ rows: [BrewOutdated]) -> some View {
+        Group {
             if rows.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: brew.scanning ? "hourglass" : "checkmark.seal")
