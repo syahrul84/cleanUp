@@ -62,20 +62,39 @@ enum FileUtils {
             }
         }
         if !needsAuth.isEmpty {
-            let done = DispatchSemaphore(value: 0)
-            var moved: [URL: URL] = [:]
-            var failure: Error?
-            DispatchQueue.main.async {
-                NSWorkspace.shared.recycle(needsAuth) { result, error in
-                    moved = result
-                    failure = error
-                    done.signal()
+            // Items owned by the system (App Store apps are owned by root)
+            // need an admin. Finder's recycle API refuses them without even
+            // prompting, so ask for the password with the standard macOS
+            // dialog and move them into the user's Trash ourselves.
+            let trashDir = home.appendingPathComponent(".Trash")
+            var moves: [(URL, URL)] = []
+            for url in needsAuth {
+                var dest = trashDir.appendingPathComponent(url.lastPathComponent)
+                var n = 2
+                while FileManager.default.fileExists(atPath: dest.path) {
+                    let base = url.deletingPathExtension().lastPathComponent
+                    let ext = url.pathExtension.isEmpty ? "" : ".\(url.pathExtension)"
+                    dest = trashDir.appendingPathComponent("\(base) \(n)\(ext)")
+                    n += 1
                 }
+                moves.append((url, dest))
             }
-            done.wait()
-            trashed += moved.count
-            for url in needsAuth where moved[url] == nil {
-                errors.append("\(url.lastPathComponent): \(failure?.localizedDescription ?? "not moved")")
+            func quoted(_ path: String) -> String { "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+            let command = moves.map { "mv \(quoted($0.0.path)) \(quoted($0.1.path))" }.joined(separator: "; ")
+            let names = needsAuth.map(\.lastPathComponent).joined(separator: ", ")
+            let script = "do shell script \"\(command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\" with administrator privileges with prompt \"CleanUp needs your password to move \(names.replacingOccurrences(of: "\"", with: "")) to the Trash.\""
+            var scriptError: NSDictionary?
+            DispatchQueue.main.sync {
+                _ = NSAppleScript(source: script)?.executeAndReturnError(&scriptError)
+            }
+            for (src, _) in moves {
+                if FileManager.default.fileExists(atPath: src.path) {
+                    let reason = (scriptError?[NSAppleScript.errorNumber] as? Int) == -128
+                        ? "cancelled" : (scriptError?[NSAppleScript.errorMessage] as? String ?? "not moved")
+                    errors.append("\(src.lastPathComponent): \(reason)")
+                } else {
+                    trashed += 1
+                }
             }
         }
         return (trashed, errors)
