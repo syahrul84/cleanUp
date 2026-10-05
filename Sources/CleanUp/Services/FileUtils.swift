@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 enum FileUtils {
     static let home = FileManager.default.homeDirectoryForCurrentUser
@@ -44,15 +45,37 @@ enum FileUtils {
 
     /// Move items to Trash. Returns (trashedCount, errors). Never permanently deletes.
     @discardableResult
+    /// Call off the main thread. Items owned by the system (App Store apps
+    /// like GarageBand are owned by root) can't be moved by CleanUp itself;
+    /// those are handed to Finder, which asks for an admin password the same
+    /// way dragging them to the Trash does.
     static func trash(_ urls: [URL]) -> (trashed: Int, errors: [String]) {
         var trashed = 0
         var errors: [String] = []
+        var needsAuth: [URL] = []
         for url in urls {
             do {
                 try FileManager.default.trashItem(at: url, resultingItemURL: nil)
                 trashed += 1
             } catch {
-                errors.append("\(url.path): \(error.localizedDescription)")
+                needsAuth.append(url)
+            }
+        }
+        if !needsAuth.isEmpty {
+            let done = DispatchSemaphore(value: 0)
+            var moved: [URL: URL] = [:]
+            var failure: Error?
+            DispatchQueue.main.async {
+                NSWorkspace.shared.recycle(needsAuth) { result, error in
+                    moved = result
+                    failure = error
+                    done.signal()
+                }
+            }
+            done.wait()
+            trashed += moved.count
+            for url in needsAuth where moved[url] == nil {
+                errors.append("\(url.lastPathComponent): \(failure?.localizedDescription ?? "not moved")")
             }
         }
         return (trashed, errors)

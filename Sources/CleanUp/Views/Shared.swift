@@ -132,7 +132,7 @@ struct TrashActionButton: View {
                         working = false
                         var message = "Moved \(result.trashed) item\(result.trashed == 1 ? "" : "s") to Trash."
                         if !result.errors.isEmpty {
-                            message += "\n\n\(result.errors.count) failed (likely needs Full Disk Access):\n"
+                            message += "\n\n\(result.errors.count) couldn't be moved:\n"
                                 + result.errors.prefix(5).joined(separator: "\n")
                         }
                         resultMessage = message
