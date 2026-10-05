@@ -100,6 +100,10 @@ struct TrashActionButton: View {
     /// then trashed on a background task.
     let urls: () -> [URL]
     var onDone: () -> Void = {}
+    /// When set, the result message is handed here instead of shown by the
+    /// button — for buttons inside a sheet that closes when done (the alert
+    /// would vanish with it).
+    var onResult: ((String) -> Void)?
 
     @State private var confirming = false
     @State private var working = false
@@ -135,7 +139,7 @@ struct TrashActionButton: View {
                             message += "\n\n\(result.errors.count) couldn't be moved:\n"
                                 + result.errors.prefix(5).joined(separator: "\n")
                         }
-                        resultMessage = message
+                        if let onResult { onResult(message) } else { resultMessage = message }
                         onDone()
                     }
                 }

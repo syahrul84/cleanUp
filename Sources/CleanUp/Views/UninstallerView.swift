@@ -7,6 +7,7 @@ struct UninstallerView: View {
     private var apps: [AppInfo] { model.apps }
     private var scanning: Bool { model.scanning }
     @State private var uninstallTarget: AppInfo?
+    @State private var resultMessage: String?
     @State private var sortOrder: SortOrder = .name
 
     private enum SortOrder: String, CaseIterable {
@@ -98,7 +99,17 @@ struct UninstallerView: View {
             }
         }
         .sheet(item: $uninstallTarget) { app in
-            UninstallSheet(app: app) { scan() }
+            UninstallSheet(app: app) { message in
+                scan()
+                // Show after the sheet has finished closing.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { resultMessage = message }
+            }
+        }
+        .alert("Uninstall finished", isPresented: .init(
+            get: { resultMessage != nil }, set: { if !$0 { resultMessage = nil } })) {
+            Button("OK") { resultMessage = nil }
+        } message: {
+            Text(resultMessage ?? "")
         }
         .navigationTitle("App Uninstaller")
         .navigationSubtitle(apps.isEmpty ? "" : "\(apps.count) applications")
@@ -112,7 +123,7 @@ struct UninstallerView: View {
 
 struct UninstallSheet: View {
     let app: AppInfo
-    var onFinished: () -> Void
+    var onFinished: (String) -> Void
     @Environment(\.dismiss) private var dismiss
 
     @State private var appItem: RemovalItem?
@@ -160,10 +171,9 @@ struct UninstallSheet: View {
                 Spacer()
                 TrashActionButton(count: allSelected.count,
                                   size: allSelected.reduce(0) { $0 + $1.size },
-                                  urls: { allSelected.map(\.url) }) {
-                    dismiss()
-                    onFinished()
-                }
+                                  urls: { allSelected.map(\.url) },
+                                  onDone: { dismiss() },
+                                  onResult: { onFinished($0) })
             }
         }
         .padding()
