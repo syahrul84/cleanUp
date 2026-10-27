@@ -148,11 +148,29 @@ enum SpeedService {
         let (_, output) = run("/usr/bin/pmset", ["-g", "assertions"])
         var names = Set<String>()
         for line in output.split(separator: "\n")
-        where line.contains("PreventUserIdleSystemSleep") || line.contains("PreventUserIdleDisplaySleep") {
+        where line.contains("PreventUserIdleSystemSleep") || line.contains("PreventUserIdleDisplaySleep")
+            || line.contains("NoIdleSleepAssertion") {
             // e.g. `  pid 476(Music): [0x…] 00:01:02 PreventUserIdleSystemSleep named: …`
-            if let open = line.firstIndex(of: "("), let close = line.firstIndex(of: ")"),
-               open < close, line.contains("pid ") {
-                names.insert(String(line[line.index(after: open)..<close]))
+            guard line.contains("pid "), let open = line.firstIndex(of: "("),
+                  let close = line.firstIndex(of: ")"), open < close else { continue }
+            let owner = String(line[line.index(after: open)..<close])
+            switch owner {
+            case "powerd":
+                // macOS's own "awake while the display is on" — always present.
+                continue
+            case "runningboardd":
+                // Held on behalf of an app: `… Assertion 0 for net.whatsapp.WhatsApp(FinishTask)`.
+                if let range = line.range(of: " for ") {
+                    let id = line[range.upperBound...].prefix { $0 != "(" && $0 != "\"" }
+                    let app = NSRunningApplication.runningApplications(withBundleIdentifier: String(id)).first
+                    // Some apps' names carry an invisible direction mark (‎WhatsApp).
+                    let name = (app?.localizedName ?? String(id)).filter {
+                        !$0.unicodeScalars.allSatisfy { $0.properties.generalCategory == .format }
+                    }
+                    names.insert(name)
+                }
+            default:
+                names.insert(owner)
             }
         }
         return names.sorted()

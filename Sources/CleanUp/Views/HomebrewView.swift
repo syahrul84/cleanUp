@@ -214,6 +214,12 @@ struct HomebrewView: View {
 
     // MARK: - Summary cards
 
+    /// "…" while a scan hasn't filled a list yet, so an empty list mid-scan
+    /// doesn't read as "nothing to do".
+    private func pending<T>(_ list: [T]) -> String? {
+        brew.scanning && list.isEmpty ? "…" : nil
+    }
+
     private var cleanupCard: some View {
         summaryCard(icon: "sparkles", tint: .blue,
                     title: "Reclaimable",
@@ -228,8 +234,9 @@ struct HomebrewView: View {
     private var orphansCard: some View {
         summaryCard(icon: "puzzlepiece.extension", tint: .orange,
                     title: "Orphaned",
-                    value: "\(brew.orphans.count)",
-                    caption: brew.orphans.isEmpty ? "no unused dependencies"
+                    value: pending(brew.orphans) ?? "\(brew.orphans.count)",
+                    caption: pending(brew.orphans) != nil ? "checking…"
+                        : brew.orphans.isEmpty ? "no unused dependencies"
                                                   : "unused dependencies") {
             Button("Remove") { brew.removeOrphans() }
                 .controlSize(.small)
@@ -240,8 +247,9 @@ struct HomebrewView: View {
     private var updatesCard: some View {
         summaryCard(icon: "arrow.down.circle", tint: .green,
                     title: "Updates",
-                    value: "\(brew.outdated.count)",
-                    caption: brew.outdated.isEmpty ? "everything up to date"
+                    value: pending(brew.outdated) ?? "\(brew.outdated.count)",
+                    caption: pending(brew.outdated) != nil ? "checking…"
+                        : brew.outdated.isEmpty ? "everything up to date"
                                                    : "packages outdated") {
             Button("Update All") { brew.upgradeAll() }
                 .controlSize(.small)
@@ -252,8 +260,9 @@ struct HomebrewView: View {
     private var adoptableCard: some View {
         summaryCard(icon: "square.and.arrow.down", tint: .cyan,
                     title: "Adoptable",
-                    value: "\(brew.adoptable.count)",
-                    caption: brew.adoptable.isEmpty ? "no apps to hand to brew"
+                    value: pending(brew.adoptable) ?? "\(brew.adoptable.count)",
+                    caption: pending(brew.adoptable) != nil ? "checking…"
+                        : brew.adoptable.isEmpty ? "no apps to hand to brew"
                                                     : "apps Homebrew can manage") {
             Button("View") { tab = .adoptable }
                 .controlSize(.small)

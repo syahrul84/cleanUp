@@ -54,6 +54,7 @@ final class MenuBarConcealer {
         var allowed = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
         allowed.subtract(hiddenIDs)
         if let own = Bundle.main.bundleIdentifier { allowed.insert(own) }
+        allowed.insert(Self.systemAgent)
         // System items (clock, Wi-Fi, battery, Control Center…) are numbered;
         // numbers with no item behind them are ignored, so allow them all.
         let systemItems = (0...255).map { NSNumber(value: $0) }
@@ -106,10 +107,13 @@ final class MenuBarConcealer {
     }
 
     /// Running apps that own at least one menu bar icon (needs Accessibility).
+    private static let systemAgent = "com.apple.MenuBarAgent"
+
     static func appsWithMenuBarIcons() -> [MenuBarApp] {
         let own = Bundle.main.bundleIdentifier
         return NSWorkspace.shared.runningApplications.compactMap { app in
-            guard let id = app.bundleIdentifier, id != own else { return nil }
+            // MenuBarAgent draws the system items (clock, Wi-Fi…), which stay put.
+            guard let id = app.bundleIdentifier, id != own, id != systemAgent else { return nil }
             let element = AXUIElementCreateApplication(app.processIdentifier)
             var value: CFTypeRef?
             guard AXUIElementCopyAttributeValue(element, "AXExtrasMenuBar" as CFString, &value) == .success,
@@ -118,7 +122,18 @@ final class MenuBarConcealer {
             guard AXUIElementCopyAttributeValue(bar as! AXUIElement, kAXChildrenAttribute as CFString,
                                                 &children) == .success,
                   let list = children as? [AnyObject], !list.isEmpty else { return nil }
-            return MenuBarApp(bundleID: id, name: app.localizedName ?? id, icon: app.icon)
+            // Apple's background agents have internal names (campo = Search);
+            // their icon's own label reads better.
+            var name = app.localizedName ?? id
+            if id.hasPrefix("com.apple."), let first = list.first {
+                var desc: CFTypeRef?
+                if AXUIElementCopyAttributeValue(first as! AXUIElement, kAXDescriptionAttribute as CFString,
+                                                 &desc) == .success,
+                   let label = desc as? String, !label.isEmpty { name = label }
+            }
+            // Some apps' names carry an invisible direction mark (‎WhatsApp).
+            name = name.filter { !$0.unicodeScalars.allSatisfy { $0.properties.generalCategory == .format } }
+            return MenuBarApp(bundleID: id, name: name, icon: app.icon)
         }
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }

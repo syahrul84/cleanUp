@@ -44,7 +44,9 @@ struct MenuBarOrganizerView: View {
     /// un-hidden.
     private var listedApps: [MenuBarConcealer.MenuBarApp] {
         let running = Set(menuBarApps.map(\.bundleID))
-        let offline = organizer.hiddenApps.subtracting(running).sorted().map { id -> MenuBarConcealer.MenuBarApp in
+        let offline = organizer.hiddenApps.subtracting(running)
+            .filter { NSRunningApplication.runningApplications(withBundleIdentifier: $0).isEmpty }
+            .sorted().map { id -> MenuBarConcealer.MenuBarApp in
             let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id)
             return MenuBarConcealer.MenuBarApp(
                 bundleID: id,
