@@ -19,6 +19,18 @@ final class MenuBarOrganizer: ObservableObject {
     @Published var startCollapsed: Bool {
         didSet { UserDefaults.standard.set(startCollapsed, forKey: "organizer.startCollapsed") }
     }
+    /// macOS 27+: apps (by bundle ID) whose icons the chevron hides. The
+    /// menu bar order no longer decides what hides there, so the user picks.
+    @Published var hiddenApps: Set<String> {
+        didSet {
+            UserDefaults.standard.set(Array(hiddenApps), forKey: "organizer.hiddenApps")
+            if isCollapsed { applyConcealment() }
+        }
+    }
+
+    /// True on macOS 27+, where hiding uses the system allowlist instead of
+    /// the separator.
+    var usesSystemHiding: Bool { MenuBarConcealer.isNeeded }
 
     private var chevronItem: NSStatusItem?
     private var separatorItem: NSStatusItem?
@@ -30,6 +42,12 @@ final class MenuBarOrganizer: ObservableObject {
     private init() {
         autoHideSeconds = UserDefaults.standard.integer(forKey: "organizer.autoHide")
         startCollapsed = UserDefaults.standard.object(forKey: "organizer.startCollapsed") as? Bool ?? true
+        hiddenApps = Set(UserDefaults.standard.stringArray(forKey: "organizer.hiddenApps") ?? [])
+    }
+
+    private func applyConcealment() {
+        guard usesSystemHiding else { return }
+        MenuBarConcealer.shared.conceal(hiding: hiddenApps)
     }
 
     /// Called at app launch.
@@ -47,6 +65,7 @@ final class MenuBarOrganizer: ObservableObject {
             collapseNow ? collapse() : expand()
         } else {
             autoHideTimer?.invalidate()
+            MenuBarConcealer.shared.reveal()
             if let chevronItem { NSStatusBar.system.removeStatusItem(chevronItem) }
             if let separatorItem { NSStatusBar.system.removeStatusItem(separatorItem) }
             chevronItem = nil
@@ -62,16 +81,24 @@ final class MenuBarOrganizer: ObservableObject {
     func collapse() {
         guard enabled else { return }
         autoHideTimer?.invalidate()
-        separatorItem?.length = collapsedLength
-        separatorItem?.button?.image = nil
+        if usesSystemHiding {
+            applyConcealment()
+        } else {
+            separatorItem?.length = collapsedLength
+            separatorItem?.button?.image = nil
+        }
         chevronItem?.button?.image = chevronImage(collapsed: true)
         isCollapsed = true
     }
 
     func expand() {
         guard enabled else { return }
-        separatorItem?.length = expandedLength
-        separatorItem?.button?.image = separatorImage()
+        if usesSystemHiding {
+            MenuBarConcealer.shared.reveal()
+        } else {
+            separatorItem?.length = expandedLength
+            separatorItem?.button?.image = separatorImage()
+        }
         chevronItem?.button?.image = chevronImage(collapsed: false)
         isCollapsed = false
 
@@ -100,6 +127,8 @@ final class MenuBarOrganizer: ObservableObject {
         chevron.button?.toolTip = "CleanUp — show or hide menu bar icons"
         chevronItem = chevron
 
+        // macOS 27 arranges the menu bar itself; a separator means nothing there.
+        guard !usesSystemHiding else { return }
         let separator = NSStatusBar.system.statusItem(withLength: expandedLength)
         separator.autosaveName = "cleanup.organizer.separator"
         separator.button?.image = separatorImage()

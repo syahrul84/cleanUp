@@ -2,6 +2,8 @@ import SwiftUI
 
 struct MenuBarOrganizerView: View {
     @ObservedObject private var organizer = MenuBarOrganizer.shared
+    @State private var menuBarApps: [MenuBarConcealer.MenuBarApp] = []
+    @State private var hasAccessibility = MenuBarConcealer.hasAccessibility
 
     private var statusTint: Color {
         organizer.enabled ? (organizer.isCollapsed ? .green : .blue) : .gray
@@ -11,12 +13,87 @@ struct MenuBarOrganizerView: View {
         ScrollView {
             VStack(spacing: 14) {
                 statusCard
-                setupCard
+                if organizer.usesSystemHiding {
+                    appsCard
+                } else {
+                    setupCard
+                }
                 if organizer.enabled { optionsCard }
             }
             .padding(16)
         }
         .navigationTitle("Menu Bar")
+        .onAppear(perform: refreshApps)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshApps()
+        }
+    }
+
+    private func refreshApps() {
+        hasAccessibility = MenuBarConcealer.hasAccessibility
+        guard organizer.usesSystemHiding, hasAccessibility else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let apps = MenuBarConcealer.appsWithMenuBarIcons()
+            DispatchQueue.main.async { menuBarApps = apps }
+        }
+    }
+
+    // MARK: macOS 27+: choose apps to hide
+
+    /// Hidden apps that aren't running right now still show, so they can be
+    /// un-hidden.
+    private var listedApps: [MenuBarConcealer.MenuBarApp] {
+        let running = Set(menuBarApps.map(\.bundleID))
+        let offline = organizer.hiddenApps.subtracting(running).sorted().map { id -> MenuBarConcealer.MenuBarApp in
+            let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id)
+            return MenuBarConcealer.MenuBarApp(
+                bundleID: id,
+                name: url.map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") } ?? id,
+                icon: url.map { NSWorkspace.shared.icon(forFile: $0.path) })
+        }
+        return menuBarApps + offline
+    }
+
+    private var appsCard: some View {
+        SectionCard(title: "Icons to hide", icon: "eye.slash", tint: .accentColor,
+                    info: "On macOS 27, the menu bar arranges itself, so ⌘-dragging no longer decides what hides. Pick the apps whose icons the chevron should tuck away. The clock, Wi-Fi, battery and Control Center always stay. While icons are hidden, macOS may ignore clicks on those system items — click the chevron first. A few apps (such as InstantView) and the camera/microphone indicator are hidden along with your picks; macOS decides this, not CleanUp.") {
+            if !hasAccessibility {
+                HoverRow {
+                    IconTile(systemName: "hand.raised", tint: .orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Allow Accessibility to list menu bar icons")
+                        Text("CleanUp uses it only to see which apps have an icon in the menu bar.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Allow…") { MenuBarConcealer.requestAccessibility() }
+                }
+            } else if listedApps.isEmpty {
+                Text("Looking for apps with menu bar icons…")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .padding(8)
+            }
+            ForEach(listedApps) { app in
+                HoverRow {
+                    if let icon = app.icon {
+                        Image(nsImage: icon).resizable().frame(width: 24, height: 24)
+                    } else {
+                        IconTile(systemName: "app", tint: .gray, size: 24)
+                    }
+                    Text(app.name)
+                    Spacer()
+                    Text(organizer.hiddenApps.contains(app.bundleID) ? "Hidden" : "Visible")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle("", isOn: Binding(
+                        get: { organizer.hiddenApps.contains(app.bundleID) },
+                        set: { hide in
+                            if hide { organizer.hiddenApps.insert(app.bundleID) }
+                            else { organizer.hiddenApps.remove(app.bundleID) }
+                        }))
+                    .labelsHidden().toggleStyle(.switch)
+                }
+            }
+        }
     }
 
     // MARK: Status
@@ -30,10 +107,16 @@ struct MenuBarOrganizerView: View {
                      ? (organizer.isCollapsed ? "Menu bar decluttered" : "Hidden icons are showing")
                      : "Menu bar organizer is off")
                     .font(.title3.bold())
-                Text(organizer.enabled
-                     ? "Click the chevron in your menu bar, or the button here, to hide or show icons."
-                     : "Turn it on to tuck away menu bar icons you rarely need.")
-                    .font(.callout).foregroundStyle(.secondary)
+                if organizer.enabled && organizer.usesSystemHiding && organizer.hiddenApps.isEmpty {
+                    Label("No icons are chosen to hide yet. Pick them under Icons to hide.",
+                          systemImage: "exclamationmark.circle")
+                        .font(.callout).foregroundStyle(.orange)
+                } else {
+                    Text(organizer.enabled
+                         ? "Click the chevron in your menu bar, or the button here, to hide or show icons."
+                         : "Turn it on to tuck away menu bar icons you rarely need.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
             }
             Spacer()
             if organizer.enabled {
