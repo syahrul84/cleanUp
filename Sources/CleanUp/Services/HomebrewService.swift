@@ -694,6 +694,19 @@ final class HomebrewService: ObservableObject {
         }
     }
 
+    /// Whether a finished brew command brought this package up to date.
+    private static func updated(_ package: BrewOutdated, by steps: [[String]]) -> Bool {
+        steps.contains { args in
+            guard let verb = args.first, verb == "upgrade" || verb == "reinstall" else { return false }
+            let names = args.dropFirst().filter { !$0.hasPrefix("-") }
+            if names.isEmpty {
+                // `upgrade --formula` updates every formula.
+                return !package.isCask && args.contains("--formula")
+            }
+            return names.contains(package.name)
+        }
+    }
+
     /// Where a cask's app lives: /Applications or ~/Applications.
     private static func appLocation(_ appName: String) -> String? {
         ["/Applications", FileUtils.home.appendingPathComponent("Applications").path]
@@ -738,11 +751,14 @@ final class HomebrewService: ObservableObject {
         queue.async { [self] in
             var status: Int32 = 0
             var failedArgs = steps[0]
+            var succeeded: [[String]] = []
             for args in steps {
                 publish { self.log += "$ brew \(args.joined(separator: " "))\n" }
                 status = runLogged(brew, args)
                 if status != 0 { failedArgs = args; break }
+                succeeded.append(args)
             }
+            let done = succeeded
             let args = failedArgs
             publish {
                 self.log += status == 0 ? "\n✓ Done\n" : "\n✗ brew exited with status \(status)\n"
@@ -758,6 +774,9 @@ final class HomebrewService: ObservableObject {
                 let tokens = self.installedTokens()
                 self.installedCaskTokens = tokens
                 self.adoptable.removeAll { tokens.contains($0.caskToken) }
+                // Likewise drop what was just updated: the full refresh below
+                // runs several slow brew commands before the list catches up.
+                self.outdated.removeAll { Self.updated($0, by: done) }
             }
             // Full refresh (queued automatically if a scan is mid-flight).
             publish { completion?(status == 0); self.scan() }
