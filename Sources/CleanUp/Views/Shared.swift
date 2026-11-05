@@ -134,7 +134,14 @@ struct TrashActionButton: View {
                     let result = FileUtils.trash(targets)
                     await MainActor.run {
                         working = false
-                        var message = "Moved \(result.trashed) item\(result.trashed == 1 ? "" : "s") to Trash."
+                        var lines: [String] = []
+                        if result.trashed > 0 || result.deleted == 0 {
+                            lines.append("Moved \(result.trashed) item\(result.trashed == 1 ? "" : "s") to Trash.")
+                        }
+                        if result.deleted > 0 {
+                            lines.append("Emptied \(result.deleted) item\(result.deleted == 1 ? "" : "s") from the Trash.")
+                        }
+                        var message = lines.joined(separator: "\n")
                         if !result.errors.isEmpty {
                             message += "\n\n\(result.errors.count) couldn't be moved:\n"
                                 + result.errors.prefix(5).joined(separator: "\n")
@@ -145,7 +152,9 @@ struct TrashActionButton: View {
                 }
             }
         } message: {
-            Text("Nothing is permanently deleted — you can restore items from the Trash.")
+            Text(urls().contains(where: FileUtils.isInTrash)
+                 ? "Items already in the Trash are deleted for good. Everything else can be restored from the Trash."
+                 : "Nothing is permanently deleted — you can restore items from the Trash.")
         }
         .alert("Cleanup finished", isPresented: .init(
             get: { resultMessage != nil }, set: { if !$0 { resultMessage = nil } })) {

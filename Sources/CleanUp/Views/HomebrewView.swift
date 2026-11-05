@@ -409,7 +409,13 @@ struct HomebrewView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 24)
             }
-            Text(package.name)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(package.name)
+                if package.appMissing {
+                    Text("App already deleted — remove it from Homebrew's list with the trash button")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+            }
             Spacer()
             Text(package.size.map { Format.bytes($0) } ?? "…")
                 .font(.caption).monospacedDigit().foregroundStyle(.secondary)

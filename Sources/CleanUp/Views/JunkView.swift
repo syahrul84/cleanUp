@@ -7,6 +7,7 @@ struct JunkView: View {
     @State private var progress = 0.0
     @State private var progressText = "Starting…"
     @State private var expanded: Set<String> = []
+    @State private var resultMessage: String?
 
     private var selectedItems: [RemovalItem] {
         categories.flatMap(\.items).filter(\.selected)
@@ -38,14 +39,22 @@ struct JunkView: View {
                         }
                         .padding(16)
                     }
-                    ResultsActionBar(rescanTitle: "Scan Again", scanning: scanning, rescan: scan) {
+                    ResultsActionBar(rescanTitle: "Scan Again", scanning: scanning, rescan: { scan() }) {
                         TrashActionButton(count: selectedItems.count, size: selectedSize,
-                                          urls: { selectedItems.map(\.url) }) { scan() }
+                                          urls: { selectedItems.map(\.url) },
+                                          onDone: afterClean,
+                                          onResult: { resultMessage = $0 })
                     }
                 }
             }
         }
         .navigationTitle("Junk Cleaner")
+        .alert("Cleanup finished", isPresented: .init(
+            get: { resultMessage != nil }, set: { if !$0 { resultMessage = nil } })) {
+            Button("OK") { resultMessage = nil }
+        } message: {
+            Text(resultMessage ?? "")
+        }
         .navigationSubtitle(categories.isEmpty ? "" : "Reclaimable: \(Format.bytes(totalSize))")
     }
 
@@ -93,9 +102,20 @@ struct JunkView: View {
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
     }
 
-    private func scan() {
+    /// Drop what was just cleaned right away, then rescan in place (the
+    /// results stay on screen, so the result alert isn't torn down with them).
+    private func afterClean() {
+        categories = categories.compactMap { category in
+            var category = category
+            category.items.removeAll { !FileUtils.exists($0.url) }
+            return category.items.isEmpty ? nil : category
+        }
+        scan(keepResults: true)
+    }
+
+    private func scan(keepResults: Bool = false) {
         scanning = true
-        categories = []
+        if !keepResults { categories = [] }
         progress = 0
         progressText = "Starting…"
         let reporter = ScanProgressReporter { fraction, text in

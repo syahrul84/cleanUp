@@ -43,17 +43,30 @@ enum FileUtils {
         FileManager.default.fileExists(atPath: url.path)
     }
 
-    /// Move items to Trash. Returns (trashedCount, errors). Never permanently deletes.
+    /// Move items to Trash. Returns counts and errors. Only items already in
+    /// the Trash are deleted for good (that's emptying the Trash).
     @discardableResult
     /// Call off the main thread. Items owned by the system (App Store apps
     /// like GarageBand are owned by root) can't be moved by CleanUp itself;
     /// those are handed to Finder, which asks for an admin password the same
     /// way dragging them to the Trash does.
-    static func trash(_ urls: [URL]) -> (trashed: Int, errors: [String]) {
+    static func trash(_ urls: [URL]) -> (trashed: Int, deleted: Int, errors: [String]) {
         var trashed = 0
+        var deleted = 0
         var errors: [String] = []
         var needsAuth: [URL] = []
         for url in urls {
+            // Already in the Trash: "moving it to the Trash" again succeeds
+            // without doing anything, so emptying means deleting for good.
+            if isInTrash(url) {
+                do {
+                    try FileManager.default.removeItem(at: url)
+                    deleted += 1
+                } catch {
+                    errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                }
+                continue
+            }
             do {
                 try FileManager.default.trashItem(at: url, resultingItemURL: nil)
                 trashed += 1
@@ -97,6 +110,11 @@ enum FileUtils {
                 }
             }
         }
-        return (trashed, errors)
+        return (trashed, deleted, errors)
+    }
+
+    /// Inside the user's Trash (~/.Trash).
+    static func isInTrash(_ url: URL) -> Bool {
+        url.standardizedFileURL.path.hasPrefix(home.appendingPathComponent(".Trash").path + "/")
     }
 }

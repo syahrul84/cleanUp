@@ -101,6 +101,7 @@ struct UninstallerView: View {
         .sheet(item: $uninstallTarget) { app in
             UninstallSheet(app: app) { message in
                 scan()
+                HomebrewService.shared.forgetDeletedApp(app.url)
                 // Show after the sheet has finished closing.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { resultMessage = message }
             }

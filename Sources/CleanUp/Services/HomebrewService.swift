@@ -7,6 +7,7 @@ struct BrewPackage: Identifiable {
     let isCask: Bool
     var size: Int64?
     var icon: NSImage?    // installed app's real icon (casks only)
+    var appMissing = false // cask whose app was deleted outside Homebrew
     var id: String { (isCask ? "cask:" : "formula:") + name }
 }
 
@@ -177,25 +178,35 @@ final class HomebrewService: ObservableObject {
                 self.catalogUnavailable = fullCatalog.isEmpty
             }
 
-            // Real icons for installed cask apps (needs the catalog's mapping).
+            // Real icons for installed cask apps (needs the catalog's mapping),
+            // and casks whose app was deleted without Homebrew (dragged to the
+            // Trash) — Homebrew still lists those until its record is removed.
             var icons: [(id: String, icon: NSImage)] = []
+            var missing: Set<String> = []
             for package in packages where package.isCask {
                 if let appName = tokenAppNameMemo?[package.name] {
-                    let path = "/Applications/\(appName)"
-                    if FileManager.default.fileExists(atPath: path) {
+                    if let path = Self.appLocation(appName) {
                         let icon = NSWorkspace.shared.icon(forFile: path)
                         icon.size = NSSize(width: 32, height: 32)
                         icons.append((package.id, icon))
+                    } else {
+                        missing.insert(package.id)
                     }
                 }
             }
             let resolved = icons
+            let missingIDs = missing
             publish {
                 for (id, icon) in resolved {
                     if let idx = self.installed.firstIndex(where: { $0.id == id }) {
                         self.installed[idx].icon = icon
                     }
                 }
+                for idx in self.installed.indices {
+                    self.installed[idx].appMissing = missingIDs.contains(self.installed[idx].id)
+                }
+                // Updating would reinstall an app the user deleted.
+                self.outdated.removeAll { $0.isCask && missingIDs.contains("cask:" + $0.name) }
             }
 
             // Package sizes from the Cellar/Caskroom, filled progressively.
@@ -680,6 +691,30 @@ final class HomebrewService: ObservableObject {
             content.body = "CleanUp installed the update that was waiting for \(item.appName) to close."
             UNUserNotificationCenter.current().add(
                 UNNotificationRequest(identifier: "update-\(item.token)", content: content, trigger: nil))
+        }
+    }
+
+    /// Where a cask's app lives: /Applications or ~/Applications.
+    private static func appLocation(_ appName: String) -> String? {
+        ["/Applications", FileUtils.home.appendingPathComponent("Applications").path]
+            .map { "\($0)/\(appName)" }
+            .first { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    /// After CleanUp's App Uninstaller removed an app, drop Homebrew's record
+    /// of it too, so the cask doesn't linger in Homebrew's list.
+    func forgetDeletedApp(_ appURL: URL) {
+        guard let brew = brewPath, !FileManager.default.fileExists(atPath: appURL.path) else { return }
+        let appName = appURL.lastPathComponent
+        queue.async { [self] in
+            parseCatalogIfNeeded()
+            let installedCasks = Set(runQuiet(brew, ["list", "-1", "--cask"]).lines)
+            let tokens = (tokenAppNameMemo ?? [:])
+                .filter { $0.value == appName && installedCasks.contains($0.key) }.map(\.key)
+            for token in tokens where Self.appLocation(appName) == nil {
+                _ = runQuiet(brew, ["uninstall", "--cask", token])
+            }
+            if !tokens.isEmpty { publish { self.scan() } }
         }
     }
 

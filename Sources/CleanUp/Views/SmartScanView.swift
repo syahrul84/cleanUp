@@ -19,6 +19,7 @@ struct SmartScanView: View {
     @State private var hasScanned = false
     @State private var progressText = "Scanning…"
     @State private var progress = 0.0
+    @State private var resultMessage: String?
 
     private var includedItems: [RemovalItem] { rows.filter(\.included).flatMap(\.items) }
     private var includedSize: Int64 { includedItems.reduce(0) { $0 + $1.size } }
@@ -90,21 +91,40 @@ struct SmartScanView: View {
                     .padding(16)
                 }
 
-                ResultsActionBar(rescanTitle: "Scan Again", scanning: scanning, rescan: scan) {
+                ResultsActionBar(rescanTitle: "Scan Again", scanning: scanning, rescan: { scan() }) {
                     TrashActionButton(count: includedItems.count, size: includedSize,
-                                      urls: { includedItems.map(\.url) }) { scan() }
+                                      urls: { includedItems.map(\.url) },
+                                      onDone: afterClean,
+                                      onResult: { resultMessage = $0 })
                 }
             }
         }
         .navigationTitle("Smart Scan")
+        .alert("Cleanup finished", isPresented: .init(
+            get: { resultMessage != nil }, set: { if !$0 { resultMessage = nil } })) {
+            Button("OK") { resultMessage = nil }
+        } message: {
+            Text(resultMessage ?? "")
+        }
         .onReceive(NotificationCenter.default.publisher(for: .runSmartScan)) { _ in
             if !scanning { scan() }
         }
     }
 
-    private func scan() {
+    /// Drop what was just cleaned right away, then rescan in place (the
+    /// results stay on screen, so the result alert isn't torn down with them).
+    private func afterClean() {
+        rows = rows.compactMap { row in
+            var row = row
+            row.items.removeAll { !FileUtils.exists($0.url) }
+            return row.items.isEmpty ? nil : row
+        }
+        scan(keepResults: true)
+    }
+
+    private func scan(keepResults: Bool = false) {
         scanning = true
-        rows = []
+        if !keepResults { rows = [] }
         progressText = "Scanning junk…"
         progress = 0
         let reporter = ScanProgressReporter { fraction, text in
