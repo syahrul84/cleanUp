@@ -42,8 +42,7 @@ Native Swift + SwiftUI. Tiny footprint. Everything it removes goes to the **Tras
 
 1. Grab the latest `CleanUp-x.y.zip` from [Releases](https://github.com/syahrul84/cleanUp/releases)
 2. Unzip and move `CleanUp.app` to `/Applications`
-3. First launch: **right-click → Open → Open** (the app is not yet notarized by Apple)
-   - If macOS still refuses: `xattr -dr com.apple.quarantine /Applications/CleanUp.app`
+3. Open it. CleanUp is signed with a Developer ID and notarized by Apple, so there's no security warning to get past.
 4. Recommended: grant **Full Disk Access** (System Settings → Privacy & Security) so scans can see everything
 
 Requires macOS 14 (Sonoma) or newer. Universal binary — runs natively on both Apple Silicon and Intel Macs.
@@ -58,6 +57,8 @@ cd cleanUp
 ./build_app.sh
 cp -R dist/CleanUp.app /Applications/
 ```
+
+Release zips come from `PUBLIC=1 ./build_app.sh`, which signs with the Developer ID certificate, notarizes with Apple and staples the ticket ([scripts/notarize.sh](scripts/notarize.sh) lists the one-time setup).
 
 ## Safety model
 

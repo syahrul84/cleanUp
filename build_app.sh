@@ -40,6 +40,7 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSHumanReadableCopyright</key><string>© 2026 Syahrul Farhan</string>
+    <key>NSAppleEventsUsageDescription</key><string>CleanUp opens Terminal to show Homebrew commands as they run.</string>
 </dict>
 </plist>
 EOF
@@ -60,3 +61,11 @@ codesign --force --deep -s "${IDENTITY:--}" "$APP"
 echo "Signed with: ${IDENTITY:-ad-hoc signature (permissions reset on each update)}"
 
 echo "Built $APP"
+
+# PUBLIC=1: also sign with Developer ID, notarize with Apple and zip for the
+# GitHub release (the in-app updater downloads the release's .zip asset).
+# See scripts/notarize.sh for the one-time setup.
+if [ "${PUBLIC:-0}" = "1" ]; then
+    VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")
+    scripts/notarize.sh "$APP" "dist/CleanUp-$VERSION.zip" Resources/CleanUp.entitlements
+fi
