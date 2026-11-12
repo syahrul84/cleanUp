@@ -27,30 +27,112 @@ enum LeftoverScanner {
         ]
     }
 
+    /// Extra places only the uninstaller looks: system-wide folders (helpers,
+    /// daemons — removing them asks for an admin password) and the top of
+    /// ~/Library, where some apps keep a data folder named after themselves.
+    private static var uninstallLocations: [Location] {
+        let lib = FileUtils.home.appendingPathComponent("Library")
+        let sys = URL(fileURLWithPath: "/Library")
+        return locations + [
+            .init(url: lib, label: "Library", filePrefixMatch: false),
+            .init(url: lib.appendingPathComponent("Application Scripts"), label: "Application Scripts", filePrefixMatch: false),
+            .init(url: lib.appendingPathComponent("Cookies"), label: "Cookies", filePrefixMatch: true),
+            .init(url: lib.appendingPathComponent("Preferences/ByHost"), label: "Preferences", filePrefixMatch: true),
+            .init(url: sys.appendingPathComponent("Application Support"), label: "System Application Support", filePrefixMatch: false),
+            .init(url: sys.appendingPathComponent("Caches"), label: "System Caches", filePrefixMatch: false),
+            .init(url: sys.appendingPathComponent("Preferences"), label: "System Preferences", filePrefixMatch: true),
+            .init(url: sys.appendingPathComponent("Logs"), label: "System Logs", filePrefixMatch: false),
+            .init(url: sys.appendingPathComponent("LaunchAgents"), label: "System Launch Agents", filePrefixMatch: true),
+            .init(url: sys.appendingPathComponent("LaunchDaemons"), label: "Launch Daemons", filePrefixMatch: true),
+            .init(url: sys.appendingPathComponent("PrivilegedHelperTools"), label: "Helper Tools", filePrefixMatch: true),
+        ]
+    }
+
+    /// macOS's own folders at the top of ~/Library — never an app's data,
+    /// even when an app shares the name.
+    private static let standardLibraryFolders: Set<String> = [
+        "accounts", "application scripts", "application support", "assistant", "audio", "autosave information",
+        "caches", "calendars", "colorpickers", "colors", "compositions", "containers", "cookies", "developer",
+        "favorites", "fonts", "group containers", "httpstorages", "input methods", "internet plug-ins",
+        "keyboard layouts", "keychains", "launchagents", "logs", "mail", "messages", "metadata",
+        "mobile documents", "passes", "preferencepanes", "preferences", "printers", "safari",
+        "saved application state", "screen savers", "services", "sounds", "spelling", "webkit",
+    ]
+
     /// Leftover candidates for one specific app (used by the uninstaller).
     /// `progress` is called with a human-readable status as locations are
     /// scanned and large folders are measured.
     static func leftovers(for app: AppInfo,
                           progress: ((String) -> Void)? = nil) -> [RemovalItem] {
-        var needles: [String] = []
-        if let bid = app.bundleID?.lowercased() { needles.append(bid) }
-        let appName = app.name.lowercased()
-        var items: [RemovalItem] = []
+        // Developers (first two ID parts) of every other installed app:
+        // anything named after one of them may be shared, so it's left alone.
+        func vendor(_ id: String) -> String? {
+            let parts = id.split(separator: ".")
+            return parts.count >= 3 ? parts.prefix(2).joined(separator: ".") : nil
+        }
+        let others = AppScanner.installedApps().filter { $0.url != app.url }
+        let otherVendors = Set(AppScanner.installedBundleIDs(others).compactMap(vendor))
+        func exclusive(_ id: String) -> Bool {
+            guard let v = vendor(id) else { return false }
+            return !otherVendors.contains(v) && v != "com.apple"
+        }
 
-        for loc in locations where FileUtils.exists(loc.url) {
+        // The app's own ID, plus the helpers shipped inside it (their files
+        // are named after the helper) when no other app shares the developer.
+        let mainID = app.bundleID?.lowercased()
+        var needles = AppScanner.installedBundleIDs([app])
+            .subtracting(AppScanner.installedBundleIDs([]))
+            .filter { id in exclusive(id) || mainID.map { id.hasPrefix($0 + ".") } == true }
+        if let mainID { needles.insert(mainID) }
+
+        // Files named after the developer (com.vendor.Other) count too, again
+        // only when nothing else installed is from that developer.
+        let vendors = Set(needles.filter(exclusive).compactMap(vendor))
+
+        let appName = app.name.lowercased()
+        let fileName = app.url.deletingPathExtension().lastPathComponent.lowercased()
+        let names: Set<String> = app.bundleID?.lowercased().hasPrefix("com.apple.") == true
+            ? [] : Set([appName, fileName]).filter { $0.count >= 3 }
+        // "BlueStacks" also owns com.bluestacks.appplayer.plist even when its
+        // own ID is registered under a different developer name.
+        let compactNames = Set(names.map { $0.filter { $0.isLetter || $0.isNumber } }.filter { $0.count >= 5 })
+        var items: [RemovalItem] = []
+        var seen = Set<String>()
+
+        for loc in uninstallLocations where FileUtils.exists(loc.url) {
             progress?("Scanning \(loc.label)…")
+            let isLibraryRoot = loc.label == "Library"
             for child in FileUtils.children(of: loc.url, includeHidden: true) {
-                let entry = child.lastPathComponent.lowercased()
+                var entry = child.lastPathComponent.lowercased()
+                if isLibraryRoot && standardLibraryFolders.contains(entry) { continue }
+                // Group containers are "<TEAMID>.vendor.name" or "group.vendor.name".
+                if let first = entry.split(separator: ".").first,
+                   first.count == 10, first.allSatisfy({ $0.isLetter || $0.isNumber }),
+                   first.contains(where: \.isNumber) {
+                    entry = String(entry.dropFirst(first.count + 1))
+                }
+                for prefix in ["group.", "groups."] where entry.hasPrefix(prefix) {
+                    entry = String(entry.dropFirst(prefix.count))
+                }
                 let matchesBundleID = needles.contains { entry == $0 || entry.hasPrefix($0 + ".") }
+                var matchesVendor = vendors.contains { entry.hasPrefix($0 + ".") }
+                // A guess by name alone: listed, but left unticked for review.
+                var guessed = false
+                if !matchesBundleID, !matchesVendor, !compactNames.isEmpty, exclusive(entry) {
+                    guessed = entry.split(separator: ".").prefix(3).contains { compactNames.contains(String($0)) }
+                    matchesVendor = guessed
+                }
                 // Name match only for folder-per-app locations, and only exact — avoids
                 // e.g. "Slack" matching "Slack Helper Whatever".
-                let matchesName = !loc.filePrefixMatch && entry == appName
-                guard matchesBundleID || matchesName else { continue }
+                let matchesName = !loc.filePrefixMatch && names.contains(entry)
+                guard matchesBundleID || matchesVendor || matchesName,
+                      seen.insert(child.path).inserted else { continue }
                 // Measuring can take a while for huge data folders (chat media,
                 // browser profiles) — say what we're doing.
                 progress?("Measuring \(child.lastPathComponent)…")
                 items.append(RemovalItem(id: child.path, url: child,
-                                         label: loc.label, size: FileUtils.size(of: child)))
+                                         label: loc.label, size: FileUtils.size(of: child),
+                                         selected: !guessed))
             }
         }
         return items.sorted { $0.size > $1.size }
